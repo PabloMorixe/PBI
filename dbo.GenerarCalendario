@@ -1,0 +1,65 @@
+USE [Tableros]
+GO
+
+/****** Object:  StoredProcedure [dbo].[GenerarCalendario]    Script Date: 29/7/2025 20:43:19 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE PROCEDURE [dbo].[GenerarCalendario]
+--WITH ENCRYPTION
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+  drop TABLE dbo.Calendar 
+
+------------------------------------------------------------------
+	-- Crear la tabla de calendario 
+CREATE TABLE dbo.Calendar (
+    Date DATE PRIMARY KEY, -- Fecha completa en formato YYYY-MM-DD
+    Año CHAR(4),           -- Año en formato de 4 dígitos
+    Mes CHAR(2),           -- Mes en formato de 2 dígitos
+    AñoMes CHAR(7)         -- AñoMes en formato YYYY-MM
+);
+
+
+DECLARE @SQL2 NVARCHAR(MAX);
+-- Componer la instrucción para crear la tabla en el servidor vinculado
+SET @SQL2 = '
+CREATE TABLE dbo.Calendar (
+    Date DATE PRIMARY KEY, -- Fecha completa en formato YYYY-MM-DD
+    Año CHAR(4),           -- Año en formato de 4 dígitos
+    Mes CHAR(2),           -- Mes en formato de 2 dígitos
+    AñoMes CHAR(7)         -- AñoMes en formato YYYY-MM
+);';
+------------------------------------------------------------------
+
+-- Insertar datos desde 2015-01-01 hasta 2040-12-31
+DECLARE @StartDate DATE = '2015-01-01';
+DECLARE @EndDate DATE = getdate();
+
+WITH DateRange AS (
+    SELECT @StartDate AS Date
+    UNION ALL
+    SELECT DATEADD(DAY, 1, Date)
+    FROM DateRange
+    WHERE Date < @EndDate
+)
+INSERT INTO Calendar (Date, Año, Mes, AñoMes)
+SELECT 
+    CONVERT(CHAR(10), Date, 120) AS Date, -- Fecha completa en formato YYYY-MM-DD
+    FORMAT(Date, 'yyyy') AS Año,         -- Año en 4 dígitos
+    FORMAT(Date, 'MM') AS Mes,           -- Mes en 2 dígitos
+    FORMAT(Date, 'yyyy-MM') AS AñoMes    -- AñoMes en formato YYYY-MM
+FROM DateRange
+OPTION (MAXRECURSION 0);
+
+DECLARE @SQL3 NVARCHAR(MAX);
+
+
+END;
+GO
+
