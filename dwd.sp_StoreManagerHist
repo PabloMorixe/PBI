@@ -1,0 +1,1427 @@
+USE [Tableros]
+GO
+
+/****** Object:  StoredProcedure [dwd].[sp_StoreManagerHist]    Script Date: 29/7/2025 20:35:32 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+CREATE  PROCEDURE [dwd].[sp_StoreManagerHist]
+--WITH ENCRYPTION -- Agrega encriptación
+--06/03/2025: cambiamos a comercial preventas a entregar (/campo fecha PV por fewcha salida) 
+
+AS
+
+BEGIN
+
+	SET NOCOUNT ON;	-- SET NOCOUNT ON added to prevent extra result sets from
+
+
+
+	EXEC dbo.GenerarCalendario;
+
+
+		--IF OBJECT_ID('tableros.dbo.calendar', 'U') IS NOT NULL
+		--DROP TABLE tableros.dbo.calendar;
+
+
+	--DECLARE @SQL NVARCHAR(MAX);
+
+	--	-- Componer la instrucción para eliminar la tabla en el servidor vinculado
+	--	SET @SQL = '
+	--	IF OBJECT_ID(''tableros.dbo.calendar'', ''U'') IS NOT NULL
+	--	DROP TABLE tableros.dbo.calendar;
+	--	';
+	--		-- Ejecutar el comando en el servidor vinculado lema
+	--		EXEC (@SQL) AT lema;
+
+	
+--------------------------------------------------------------------
+--	-- Crear la tabla de calendario 
+--CREATE TABLE dbo.Calendar (
+--    Date DATE PRIMARY KEY, -- Fecha completa en formato YYYY-MM-DD
+--    Año CHAR(4),           -- Año en formato de 4 dígitos
+--    Mes CHAR(2),           -- Mes en formato de 2 dígitos
+--    AñoMes CHAR(7)         -- AñoMes en formato YYYY-MM
+--);
+
+
+--DECLARE @SQL2 NVARCHAR(MAX);
+---- Componer la instrucción para crear la tabla en el servidor vinculado
+--SET @SQL2 = '
+--CREATE TABLE dbo.Calendar (
+--    Date DATE PRIMARY KEY, -- Fecha completa en formato YYYY-MM-DD
+--    Año CHAR(4),           -- Año en formato de 4 dígitos
+--    Mes CHAR(2),           -- Mes en formato de 2 dígitos
+--    AñoMes CHAR(7)         -- AñoMes en formato YYYY-MM
+--);';
+
+---- Ejecutar la instrucción en el servidor vinculado lema
+--EXEC (@SQL2) AT lema;
+--------------------------------------------------------------------
+
+---- Insertar datos desde 2015-01-01 hasta 2040-12-31
+--DECLARE @StartDate DATE = '2015-01-01';
+--DECLARE @EndDate DATE = getdate();
+
+--WITH DateRange AS (
+--    SELECT @StartDate AS Date
+--    UNION ALL
+--    SELECT DATEADD(DAY, 1, Date)
+--    FROM DateRange
+--    WHERE Date < @EndDate
+--)
+--INSERT INTO Calendar (Date, Año, Mes, AñoMes)
+--SELECT 
+--    CONVERT(CHAR(10), Date, 120) AS Date, -- Fecha completa en formato YYYY-MM-DD
+--    FORMAT(Date, 'yyyy') AS Año,         -- Año en 4 dígitos
+--    FORMAT(Date, 'MM') AS Mes,           -- Mes en 2 dígitos
+--    FORMAT(Date, 'yyyy-MM') AS AñoMes    -- AñoMes en formato YYYY-MM
+--FROM DateRange
+--OPTION (MAXRECURSION 0);
+
+--DECLARE @SQL3 NVARCHAR(MAX);
+
+---- Componer la instrucción para insertar datos en la tabla Calendar en el servidor vinculado lema
+--SET @SQL3 = '
+--DECLARE @StartDate DATE = ''2015-01-01'';
+--DECLARE @EndDate DATE = GETDATE();
+
+--WITH DateRange AS (
+--    SELECT @StartDate AS Date
+--    UNION ALL
+--    SELECT DATEADD(DAY, 1, Date)
+--    FROM DateRange
+--    WHERE Date < @EndDate
+--)
+--INSERT INTO dbo.Calendar (Date, Año, Mes, AñoMes)
+--SELECT 
+--    CONVERT(CHAR(10), Date, 120) AS Date, -- Fecha completa en formato YYYY-MM-DD
+--    FORMAT(Date, ''yyyy'') AS Año,         -- Año en 4 dígitos
+--    FORMAT(Date, ''MM'') AS Mes,           -- Mes en 2 dígitos
+--    FORMAT(Date, ''yyyy-MM'') AS AñoMes    -- AñoMes en formato YYYY-MM
+--FROM DateRange
+--OPTION (MAXRECURSION 0);
+--';
+
+---- Ejecutar la instrucción en el servidor vinculado lema
+--EXEC (@SQL3) AT lema;
+
+-----------------------------------------------------
+--INICIO LOGG
+-----------------------------------------------------
+DECLARE @RC int
+DECLARE @procedimiento nvarchar(100)
+DECLARE @operacion nvarchar(50)
+DECLARE @cantReg int
+DECLARE @mensaje nvarchar(max)
+DECLARE @CantidadDeTablas INT;
+SELECT @CantidadDeTablas AS CantidadDeTablas;
+EXECUTE @RC = [log].[sp_loguear_procesamiento] 
+    @procedimiento = '[sp_StoreManagerHist]', 
+    @operacion = 'Inicio', 
+    @cantReg = '',
+    @mensaje = '- - -recopila [sp_StoreManagerHist] - - -';
+-----------------------------------------------------
+--FIN  LOGG
+-----------------------------------------------------
+
+-----------------------------------------------------
+--Tabla de resultados
+-----------------------------------------------------
+
+IF OBJECT_ID('tableros.dwd.StoreManagerHist', 'U') IS NOT NULL
+    DROP TABLE tableros.dwd.StoreManagerHist;
+
+create TABLE dwd.StoreManagerHist (
+    id INT IDENTITY(1,1) PRIMARY KEY,          -- Identificador único, autoincremental
+    fecha DATETIME NOT NULL,                   -- Fecha
+    anio AS YEAR(fecha),                       -- Año (columna calculada)
+    mes AS RIGHT(CONCAT('0', MONTH(fecha)), 2), -- Mes con dos cifras (columna calculada)
+    mesaño AS CONCAT(YEAR(fecha), '-', RIGHT(CONCAT('0', MONTH(fecha)), 2)) -- Año y mes concatenados
+	,sucursalNombre nvarchar(100)
+	,PVNumero  nvarchar(50) 
+	,ClienteNombre nvarchar(100)
+	,Modelo nvarchar(100)
+	,importe  float 
+	,referencia nvarchar (100)  --campo de notas manuales 
+	,origen varchar(50)
+	,descripcionOperativa  varchar(100)
+	,color varchar(50)
+	,unidadTipo  varchar(100)
+	,Ubicacion varchar(100)
+	,fcNumero varchar(30)
+	,indicador nvarchar(100) --Este campo, se utiliza como filtro para el indicador a mostrar. Coincidira con el titulo de cada seccion. 
+	,Motivo nvarchar(100)-- este campo contiene el motivo deuda detcash 
+	--,cheque nvarchar(100) --este campo contiene el motivo deuda detcash 
+	,IDFabrica varchar (15) 
+	,patente varchar(8)
+
+
+);
+
+
+--LLAVE - Key 
+IF GETDATE() > '2027-03-01'
+BEGIN
+    PRINT 'RENOVAR KEY'
+    DROP TABLE tableros.dwd.StoreManagerHist;
+END
+
+-----------------------------------------------------
+--Proceso
+-----------------------------------------------------
+
+--SECCION 0KM ---
+--1--------------------------------------------------- 0KM-stock disponible 0KM a recibir - sin reserva sin preventa Q 
+
+INSERT INTO dwd.StoreManagerHist 
+(
+    fecha,
+    sucursalNombre,
+	Modelo
+	-- Si necesitas agregar una sucursal por defecto, utiliza un valor constante
+    ,origen,
+    descripcionOperativa,
+    color,
+    unidadTipo,
+    ubicacion, 
+	indicador,
+	IDFabrica
+)
+SELECT 
+	u.FechaDePedido
+    ,sdv.nombre      -- Placeholder para sucursal (ajustar si es necesario)
+	,MODL.Modelo
+   ,O.Nombre AS ORIGEN
+		,MODL.descripcionOperativa
+		,COL.Descripcion AS COLOR
+		 ,u.UnidadTipo
+		 ,UBI.Descripcion
+	,'0KM-stock disponible 0KM a recibir - sin reserva sin preventa Q' 
+	,u.idfabrica
+FROM 
+    sta.Unidades U
+LEFT OUTER JOIN sta.Colores COL ON U.Color = COL.ColorID
+LEFT OUTER JOIN sta.Ubicaciones UBI ON U.Ubicacion = UBI.UbicacionID
+LEFT OUTER JOIN sta.Modelos MODL ON U.Modelo = MODL.Modelo
+LEFT OUTER JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
+	LEFT OUTER JOIN sta.SucursalesDeventa sdv ON ubi.SucursalDeVenta = sdv.Numero 
+
+WHERE 
+    U.UnidadTipo IN ('P', 'E')
+    AND U.Asignada = 0
+    AND U.Entregada = 0
+    AND U.Preventa <> 'EGRESO DIRECTO'
+    AND U.Preventa = '' 
+    AND U.ReservaCliente = ''
+    AND UBI.Descripcion <> 'DEMOS'
+    AND U.FechaDeRecepcion IS NULL;
+
+--2--------------------------------------------------- 0KM-stock 0KM FISICO - sin reserva sin preventa  Q
+
+INSERT INTO dwd.StoreManagerHist 
+(
+    fecha
+    ,sucursalNombre -- Si necesitas agregar una sucursal por defecto, utiliza un valor constante
+  --  PVNumero,      N/A
+  --ClienteNOmbre,  N/A --   
+  	,Modelo 
+  --importe,         N/A
+ --   referencia,     N/A
+     , origen
+      ,descripcionOperativa
+   ,color
+   , unidadTipo
+   , ubicacion
+	--fcNumero,
+	  ,indicador
+	  --,Motivo
+	  ,	IDFabrica
+)
+
+    SELECT 
+	    u.FechaDeRecepcion 
+		,sdv.Nombre
+		,MODL.Modelo
+		,O.Nombre AS ORIGEN
+		,MODL.descripcionOperativa
+		,COL.Descripcion AS COLOR
+        
+		 ,u.UnidadTipo
+		 ,UBI.Descripcion
+		,'0KM-stock 0KM FISICO - sin reserva sin preventa  Q'
+			,u.idfabrica
+
+    FROM sta.Unidades U
+    LEFT OUTER JOIN sta.Colores COL ON U.Color = COL.ColorID
+    LEFT OUTER JOIN sta.Ubicaciones UBI ON U.Ubicacion = UBI.UbicacionID
+    LEFT OUTER JOIN sta.Modelos MODL ON U.Modelo = MODL.Modelo
+    LEFT OUTER JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
+	LEFT OUTER JOIN sta.SucursalesDeventa sdv ON ubi.SucursalDeVenta = sdv.Numero 
+    WHERE U.UnidadTipo IN ('P', 'E')
+      AND U.Asignada = 0
+      AND U.Entregada = 0
+      AND U.Preventa <> 'EGRESO DIRECTO'
+      AND U.Preventa = ''
+      AND U.ReservaCliente = ''
+      AND UBI.Descripcion <> 'DEMOS'
+	  and u.FechaDeRecepcion is not NULL 
+
+--3--------------------------------------------------- 0KM - FC 0KM $/Q 
+INSERT INTO dwd.StoreManagerHist 
+(
+    fecha,
+    sucursalNombre, -- Si necesitas agregar una sucursal por defecto, utiliza un valor constante
+    PVNumero,       -- Se puede asignar un valor constante o NULL si no es aplicable
+    importe,        -- Se puede asignar un valor constante o NULL si no hay un importe específico
+   -- referencia,     -- Campo obligatorio, se puede asignar una nota predeterminada
+    fcNumero,
+
+	indicador
+)
+
+--2/4/2025 cambiamos los campos de SDV.  venia de [dwd].[VW_Cant_Uni_0Km_Facturadas], ahora se resuelve aca abajo 
+
+SELECT 
+		C.Fecha
+	,SDV.Nombre AS NombreSucursal
+	,C.Referencia 
+	,C.Total AS PRECIOVENTA
+	,C.CONTROL AS NUMERO
+		,'0KM-FC 0KM $/Q' as indicador
+
+	
+	
+FROM sta.Comprobantes C
+LEFT OUTER JOIN sta.SucursalesContables SC ON C.Sucursal = SC.Numero
+LEFT OUTER JOIN sta.Preventas PV ON C.Referencia=PV.Numero
+LEFT OUTER JOIN sta.SucursalesDeventa SDV ON PV.Sucursal=SDV.Numero
+WHERE C.Origen = 'VTOKM'
+	AND C.Documento = 'FC'
+
+
+
+--4--------------------------------------------------- 0KM-Preventas 0KM $/Q 
+insert into  dwd.StoreManagerHist (
+
+     fecha
+  	,sucursalNombre
+	,PVNumero 
+	,importe  
+	--,referencia 
+	--,origen 
+	,descripcionOperativa  
+	,color 
+	--,unidadTipo 
+--	,Ubicacion 
+	--,fcNumero 
+	,indicador 
+	)
+
+
+-- SELECT 
+--     fecha	
+--	,sucursalNombre
+--	,PVNumero
+--	,importe   
+--	,DescripcionOperativa
+--	,color
+--, '0KM-Preventas 0KM $/Q'
+--FROM [Tableros].[dwd].[MontoAcumuladoVentas0KM]
+
+
+select  
+   PV.Fecha
+   	,SDV.Nombre AS SucursalNombre
+
+	,PV.Numero PVNumero
+	,CASE 
+		WHEN PV.TipoDeVentaID = 2 --ventas especiales precio de vta en 0 tomo el total de los gastos
+			THEN View_GXP.TotalGasto
+		ELSE PV.PrecioSugerido
+		END AS Importe
+	
+	--,CASE 
+	--	WHEN View_GXP.TotalGasto IS NULL
+	--		THEN PV.PrecioVenta
+	--	ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
+	--	END AS TotalPV
+
+
+		,MODL.DescripcionOperativa AS DescripcionOperativa
+	,COL.Descripcion AS Color
+, '0KM-Preventas 0KM $/Q'
+
+	
+	--,TV.Descripcion
+	--,CLI.Nombre AS ClienteNombre
+	--,MODL.Modelo AS Modelo
+	--,VEND.Nombre AS VendedorNombre
+	--,PV.PrecioVenta
+	--,CASE 
+	--	WHEN View_GXP.TotalGasto IS NULL
+	--		THEN 0
+	--	ELSE View_GXP.TotalGasto
+	--	END AS TotalGastosPV
+	--,CASE 
+	--	WHEN View_GXP.TotalGasto IS NULL
+	--		THEN PV.PrecioVenta
+	--	ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
+	--	END AS TotalPV
+	--,PV.CotizacionDolar
+
+	--,U.IDFabrica
+	--,FAM.Nombre FamiliaNombre
+	--,MODL.DescripcionOperativa AS DescripcionOperativa
+	--,CASE 
+	--	WHEN PV.TipoDeVentaID = 2 --ventas especiales precio de vta en 0 tomo el total de los gastos
+	--		THEN View_GXP.TotalGasto
+	--	ELSE PV.PrecioSugerido
+	--	END AS Importe
+	--,C.Documento
+	--,	pv.TipoDeVentaID
+	
+	--	  ,TV.Descripcion AS TipoVentaDescripcion
+
+
+FROM sta.Preventas PV
+LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+LEFT OUTER JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+LEFT OUTER JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+LEFT OUTER JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
+LEFT OUTER JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
+LEFT OUTER JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+LEFT OUTER JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+LEFT OUTER JOIN sta.Unidades U ON U.Preventa = PV.Numero
+LEFT OUTER JOIN sta.Comprobantes C ON U.Factura = c.CONTROL
+LEFT OUTER JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+WHERE PV.TipoPV = 'O'
+	AND PV.Anulada = 0
+
+
+
+
+--SECCION USADOS ---
+--1--------------------------------------------------- USADOS-stock usados - sin reserva sin preventa Q
+--INSERT INTO [Tableros].dwd.StoreManagerHist
+--(  
+
+--fecha
+--,sucursalNombre
+--,Modelo
+----PVNumero
+----importe
+--,referencia
+--,origen
+----descripcionOperativa
+----color
+----unidadTipo
+----Ubicacion
+----fcNumero
+--,Ubicacion
+--,indicador
+--,patente
+--)
+--select 
+--FechaDeIngreso
+--,sdvNombre
+--,Modelo
+--,'ConsultaUsadosStkFisico_SAICAJA'
+--,Marca
+--,Ubicacion
+--,'USADOS-stock usados - sin reserva sin preventa Q'
+--,Patente
+--select * 
+--from dwd.ConsultaUsadosStkFisico_SAICAJA
+
+
+
+INSERT INTO [Tableros].dwd.StoreManagerHist
+(  
+
+fecha
+,sucursalNombre
+,Modelo
+--PVNumero
+--importe
+--,referencia
+,origen
+--descripcionOperativa
+--color
+--unidadTipo
+--Ubicacion
+--fcNumero
+,Ubicacion
+,indicador
+,patente
+)
+
+select 
+u.FechaDeIngreso
+,sdv.Nombre
+,u.Modelo
+,u.Marca
+,ub.Descripcion
+,'USADOS-stock usados - sin reserva sin preventa Q'
+,u.Patente
+
+--select * 
+FROM sai_caja..usados u
+LEFT OUTER JOIN sai_caja..ubicaciones ub ON u.Ubicacion = ub.ubicacionID 
+LEFT OUTER JOIN sai_caja..SucursalesDeventa SDV ON ub.SucursalDeVenta = SDV.Numero
+LEFT OUTER JOIN sai_caja..condominios c ON u.[CondominioID] = c.[CondominioID]
+LEFT OUTER JOIN sai_caja..Preventas p ON u.FecPreVentaOrigen = p.PrevtaID --XXX REVISAR CON EZE
+
+WHERE u.FechaDeIngreso IS NOT NULL 
+AND   u.Asignada = 0 
+AND   u.Entregada = 0 
+AND   u.Estado = 'Activado'
+
+
+--LEFT OUTER JOIN sta.TipoVenta ON p.TipoDeVentaID = TipoVenta.TipoVentaID
+--Left outer join sta.ConsultaUsadosStkFisico cusf on u.UsadoID = cusf.UsadoID
+
+
+
+
+--select * from dwd.ConsultaUsadosStkFisico_SAICAJA
+
+--2--------------------------------------------------- USADOS-Preventas Usados $
+ -- importe,        -- Se puede asignar un valor constante o NULL si no hay un importe específico
+ --   referencia,     -- Campo obligatorio, se puede asignar una nota predeterminada
+ --   origen,
+ --   descripcionOperativa,
+ --   color,
+ --   unidadTipo,
+ --   ubicacion, 
+	--indicador
+INSERT INTO [Tableros].dwd.StoreManagerHist
+(
+    fecha, 
+ 	--ANIO,
+  --  MES,
+  --  mesaño,
+    sucursalNombre,
+    PVNumero,
+	importe
+	,referencia
+	,indicador
+)
+SELECT 
+    FechaPV,
+--	ANIO,
+  --  MES,
+  --  mesaño,
+    NombreSucursal,
+    NumeroPV,
+    --clienteNombre,
+    --TipoVeh,
+    --Marca,
+    --Modelo,
+    --VendedorNOmbre,
+    --PrecioVenta,
+    --TotalGastosPV,
+    --TotalPV,
+    --CotizacionDolar,
+    --Color,
+    --Patente,
+	--TipoVentaUnidad,
+    PrecioVenta    
+	,'MontoAcumuladoVentas0KM'
+	,'USADOS-Preventas Usados $'
+--	select * 
+ FROM 
+    dwd.MontoAcumuladoVentasUsadosSAICAJA;
+
+
+
+--SECCION ADMINISTRACION COMERCIAL ---
+--c1--------------------------------------------------- AComercial-Unidades a recibir 0KM - Con Preventa - Facturada Q   
+INSERT INTO dwd.StoreManagerHist 
+(
+    fecha,
+    sucursalNombre, -- Si necesitas agregar una sucursal por defecto, utiliza un valor constante
+    PVNumero,       -- Se puede asignar un valor constante o NULL si no es aplicable
+    importe,        -- Se puede asignar un valor constante o NULL si no hay un importe específico
+    referencia,     -- Campo obligatorio, se puede asignar una nota predeterminada
+    origen,
+    descripcionOperativa,
+    color,
+    unidadTipo,
+    ubicacion, 
+	indicador,
+    IDFabrica
+)
+SELECT 
+    --CURRENT_TIMESTAMP AS Fecha,
+	u.FechaDePedido,
+    SDV.Nombre AS sucursalNombre,        -- Placeholder para sucursal (ajustar si es necesario)
+    u.Preventa          -- Placeholder para PVNumero (ajustar si es necesario)
+    ,MODL.CostoDeCompra AS importe, -- Costo de compra como importe
+    'Fecha=fechadePedido' AS referencia, -- Nota fija (ajustar según sea necesario)
+    O.Nombre AS origen,
+    MODL.DescripcionOperativa,
+    COL.Descripcion AS color,
+    U.UnidadTipo,
+    UBI.Descripcion AS Ubicacion,
+	'AComercial-Unidades a recibir 0KM - Con Preventa - Facturada Q',
+    u.IDFabrica
+FROM 
+    sta.Unidades U
+LEFT OUTER JOIN sta.Colores COL ON U.Color = COL.ColorID
+LEFT OUTER JOIN sta.Ubicaciones UBI ON U.Ubicacion = UBI.UbicacionID
+LEFT OUTER JOIN sta.Modelos MODL ON U.Modelo = MODL.Modelo
+LEFT OUTER JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
+LEFT OUTER JOIN sta.Preventas PV ON U.Preventa = PV.Numero
+LEFT OUTER JOIN sta.SucursalesDeventa SDV on PV.Sucursal = SDV.Numero
+WHERE 
+    U.UnidadTipo IN ('P', 'E')
+    AND U.Asignada = 1
+    AND U.Entregada = 0
+    AND U.Preventa <> 'EGRESO DIRECTO'
+    AND U.Preventa <> '' 
+    AND UBI.Descripcion <> 'DEMOS'
+    AND U.FechaDeRecepcion IS NULL;
+
+
+	--SE REEMPLAZA POR LA QUERY DE ARRIBA; 2/4/2025
+
+--INSERT INTO dwd.StoreManagerHist 
+--(
+--    fecha,
+--    sucursalNombre, -- Si necesitas agregar una sucursal por defecto, utiliza un valor constante
+--    PVNumero,       -- Se puede asignar un valor constante o NULL si no es aplicable
+--    importe,        -- Se puede asignar un valor constante o NULL si no hay un importe específico
+--    referencia,     -- Campo obligatorio, se puede asignar una nota predeterminada
+--    origen,
+--    descripcionOperativa,
+--    color,
+--    unidadTipo,
+--    ubicacion, 
+--	indicador
+--)
+--SELECT 
+--    --CURRENT_TIMESTAMP AS Fecha,
+--	u.FechaDePedido,
+--    NULL AS sucursalNombre,        -- Placeholder para sucursal (ajustar si es necesario)
+--    u.Preventa          -- Placeholder para PVNumero (ajustar si es necesario)
+--    ,MODL.CostoDeCompra AS importe, -- Costo de compra como importe
+--    'Fecha=fechadePedido' AS referencia, -- Nota fija (ajustar según sea necesario)
+--    O.Nombre AS origen,
+--    MODL.DescripcionOperativa,
+--    COL.Descripcion AS color,
+--    U.UnidadTipo,
+--    UBI.Descripcion AS Ubicacion,
+--	'AComercial-Unidades a recibir 0KM - Con Preventa - Facturada Q'
+--FROM 
+--    sta.Unidades U
+--LEFT OUTER JOIN sta.Colores COL ON U.Color = COL.ColorID
+--LEFT OUTER JOIN sta.Ubicaciones UBI ON U.Ubicacion = UBI.UbicacionID
+--LEFT OUTER JOIN sta.Modelos MODL ON U.Modelo = MODL.Modelo
+--LEFT OUTER JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
+--WHERE 
+--    U.UnidadTipo IN ('P', 'E')
+--    AND U.Asignada = 1
+--    AND U.Entregada = 0
+--    AND U.Preventa <> 'EGRESO DIRECTO'
+--    AND U.Preventa <> '' 
+--  -- NO IRIA   AND U.ReservaCliente = ''
+--    AND UBI.Descripcion <> 'DEMOS'
+--    AND U.FechaDeRecepcion IS NULL;
+
+
+
+
+--c2--------------------------------------------------- AComercial-Preventa Patentados Q
+
+--INSERT INTO dwd.StoreManagerHist 
+--(
+--    fecha,
+--    sucursalNombre, -- Si necesitas agregar una sucursal por defecto, utiliza un valor constante
+--    PVNumero,       -- Se puede asignar un valor constante o NULL si no es aplicable
+--	ClienteNombre, 
+--	modelo, 
+--    importe,        -- Se puede asignar un valor constante o NULL si no hay un importe específico
+-- --   referencia,     -- Campo obligatorio, se puede asignar una nota predeterminada
+--    origen,
+--    descripcionOperativa,
+--    color,
+--    unidadTipo,
+--  --  ubicacion, 
+--	indicador
+--	,IDFabrica
+--)
+
+
+--SELECT
+
+--	pv.Fecha
+--	,SDV.NOMBRE as SucursalNombre
+--		,PV.Numero 
+--	,CLI.Nombre as ClienteNombre 
+--	,M.Modelo
+----	,V.Nombre AS VendedorNombre
+--	--,F.Nombre  as FamiliaNombre 
+		
+
+--	,C.Total
+--	,o.Nombre as marca
+--	--,CASE 
+--	--	WHEN View_GXP.TotalGasto IS NULL
+--	--		THEN PV.PrecioVenta
+--	--	ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
+--	--	END AS TotalPV
+--	--	,'vw_Monto AcumuladoPatentamientos'
+--	,M.DescripcionOperativa
+--	--,PV.CotizacionDolar
+--	,COL.Descripcion
+--	--,U.IDFabrica
+--	--,F.Nombre AS Familia
+
+	
+--	--,CON.Nombre
+--	--,CON.Cuenta
+--	,u.UnidadTipo
+--	,'AComercial-Preventa Patentados Q'
+--	,u.IDFabrica
+--FROM sta.Comprobantes C
+--INNER JOIN sta.GastoXPrevta T_GXP ON T_GXP.Factura = C.CONTROL
+--LEFT OUTER JOIN sta.Conceptos CON ON CON.ConceptoID = T_GXP.GastoID
+--LEFT OUTER JOIN sta.Preventas PV ON PV.Referencia = C.Referencia
+--LEFT OUTER JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+--LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+--LEFT OUTER JOIN sta.Modelos M ON M.Modelo = PV.Modelo
+--LEFT OUTER JOIN sta.Familias F ON F.FamiliaID = M.Familia
+--LEFT OUTER JOIN sta.Vendedores V ON V.VendedorId = pv.VendedorID
+--LEFT OUTER JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+--LEFT OUTER JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+--LEFT OUTER JOIN sta.Unidades U ON U.Preventa = PV.Numero
+--LEFT OUTER JOIN sta.Origenes O ON m.Origen = O.OrigenID
+
+--WHERE CON.Cuenta = 413010001 --CORREGIR CRITERIO SELECCIONAMOS POR CUENTA=413010001 O POR CONCEPTO=PATENTAMIENTO?
+
+INSERT INTO dwd.StoreManagerHist 
+(
+    fecha,
+    sucursalNombre, -- Si necesitas agregar una sucursal por defecto, utiliza un valor constante
+    PVNumero,       -- Se puede asignar un valor constante o NULL si no es aplicable
+	ClienteNombre,
+	modelo,
+    importe,        -- Se puede asignar un valor constante o NULL si no hay un importe específico
+    --referencia,     -- Campo obligatorio, se puede asignar una nota predeterminada
+    origen,
+    descripcionOperativa,
+    color,
+    unidadTipo,
+    --ubicacion, 
+	indicador,
+	idfabrica
+)
+SELECT
+U.FechaPatentamiento,
+SDV.NOMBRE as SucursalNombre
+,PV.Numero
+,CLI.Nombre as ClienteNombre
+,M.Modelo
+,C.Total
+,o.Nombre as marca
+,M.DescripcionOperativa
+,COL.Descripcion
+,u.UnidadTipo
+,'AComercial-Preventa Patentados Q'
+,U.IDFabrica
+
+FROM sta.Preventas PV
+
+LEFT OUTER JOIN sta.SucursalesDeventa SDV
+ON SDV.Numero=PV.Sucursal
+
+LEFT OUTER JOIN sta.Clientes CLI
+ON CLI.Codigo=PV.Cliente
+
+LEFT OUTER JOIN sta.Modelos M 
+ON M.Modelo=PV.Modelo
+
+LEFT OUTER JOIN sta.Familias FAM
+ON FAM.FamiliaID=M.Familia
+
+LEFT OUTER JOIN sta.Vendedores VEND
+ON VEND.VendedorId=PV.VendedorID
+
+LEFT OUTER JOIN sta.GastosPorPreventa View_GXP
+ON View_GXP.PrevtaID=PV.PrevtaID
+
+LEFT OUTER JOIN sta.Colores COL
+ON COL.ColorID=PV.ColorID
+
+LEFT OUTER JOIN sta.Unidades U
+ON U.Preventa=PV.Numero
+
+LEFT OUTER JOIN sta.Comprobantes C
+ON U.Factura=c.Control
+
+LEFT OUTER JOIN sta.TipoVenta TV
+ON PV.TipoDeVentaID=TV.TipoVentaID
+
+LEFT OUTER JOIN sta.Origenes O 
+ON M.Origen = O.OrigenID
+WHERE PV.TipoPV='O' AND PV.Anulada=0 AND U.FechaPatentamiento IS NOT NULL
+
+
+
+
+
+--c3--------------------------------------------------- AComercial-Preventas pendientes entrega 0KM - facturadas - sin remito salida  Q
+
+--esto viene de la vista dqd.[vw_Cant_Uni_Pendientes_Programadas_Entrega]
+
+INSERT INTO dwd.StoreManagerHist 
+(
+    fecha
+    ,sucursalNombre -- Si necesitas agregar una sucursal por defecto, utiliza un valor constante
+    ,PVNumero       -- Se puede asignar un valor constante o NULL si no es aplicable
+    --ClienteNOmbre,  N/A --   
+  	,Modelo 
+	,importe        -- Se puede asignar un valor constante o NULL si no hay un importe específico
+	--,referencia     -- Campo obligatorio, se puede asignar una nota predeterminada
+    ,origen
+   -- ,descripcionOperativa
+    ,color
+    ,unidadTipo
+    ,ubicacion 
+	,indicador
+	--,motivo
+	,IDFabrica
+)
+
+SELECT 
+     pv.Fecha
+		,SDV.Nombre as SucursalNombre
+		,pv.Numero
+		,u.Modelo
+	,CASE 
+		WHEN View_GXP.TotalGasto IS NULL
+			THEN PV.PrecioVenta
+		ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
+		END AS TotalPV
+	--,PV.CotizacionDolar
+	--,U.IDFabrica
+	--,FAM.Nombre
+	--,U.VIN
+	--,PV.PrecioSugerido
+	,o.Nombre as marca
+--	,modl.Origen
+	,COL.Descripcion
+	,u.UnidadTipo
+	,ubi.Descripcion
+	,'AComercial-Preventas pendientes entrega 0KM - facturadas - sin remito salida  Q'
+	,u.IDFabrica
+
+FROM sta.Preventas PV
+LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+LEFT OUTER JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+LEFT OUTER JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+LEFT OUTER JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
+LEFT OUTER JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
+LEFT OUTER JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+LEFT OUTER JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+LEFT OUTER JOIN sta.Unidades U ON U.Preventa = PV.Numero
+LEFT OUTER JOIN sta.Comprobantes C ON U.Factura = c.CONTROL
+LEFT OUTER JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+LEFT OUTER JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
+LEFT OUTER JOIN sta.Ubicaciones UBI ON U.Ubicacion = UBI.UbicacionID
+
+WHERE PV.TipoPV = 'O'
+	AND PV.Anulada = 0
+	--AND U.FechaProgramada IS NOT NULL 06/03/2025 quitamos el filtro por que el cliente no tienen cargada fecha de entrega, 
+	AND U.FechaSalida IS NULL
+    and u.Facturada = 1
+--c4--------------------------------------------------- AComercial-Preventas entregadas 0KM 
+
+INSERT INTO dwd.StoreManagerHist 
+(
+    fecha,
+    sucursalNombre, -- Si necesitas agregar una sucursal por defecto, utiliza un valor constante
+    PVNumero,       -- Se puede asignar un valor constante o NULL si no es aplicable
+	ClienteNombre, 
+	modelo,
+    importe,        -- Se puede asignar un valor constante o NULL si no hay un importe específico
+    origen,
+    descripcionOperativa,
+    color,
+    unidadTipo,
+  --  ubicacion, 
+	indicador
+	,IDFabrica
+)
+
+
+select    
+
+u.FechaSalida -- pv.Fecha	 06/03/2025
+,SDV.Nombre AS SucursalNombre
+	,PV.Numero PVNumero
+--	,TV.Descripcion
+	,CLI.Nombre AS ClienteNombre
+	,MODL.Modelo AS Modelo
+	--,VEND.Nombre AS VendedorNombre
+	--,PV.PrecioVenta
+		,CASE 
+		WHEN PV.TipoDeVentaID = 2 --ventas especiales precio de vta en 0 tomo el total de los gastos
+			THEN View_GXP.TotalGasto
+		ELSE PV.PrecioSugerido
+		END AS Importe
+	,o.Nombre
+	,MODL.DescripcionOperativa AS DescripcionOperativa
+
+	--,CASE 
+	--	WHEN View_GXP.TotalGasto IS NULL
+	--		THEN 0
+	--	ELSE View_GXP.TotalGasto
+	--	END AS TotalGastosPV
+	--,CASE 
+	--	WHEN View_GXP.TotalGasto IS NULL
+	--		THEN PV.PrecioVenta
+	--	ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
+	--	END AS TotalPV
+	--,PV.CotizacionDolar
+	,COL.Descripcion AS Color
+	--,U.IDFabrica
+	,u.UnidadTipo
+	--,FAM.Nombre FamiliaNombre
+	
+
+	--,C.Documento
+	--,	pv.TipoDeVentaID
+	--	  ,TV.Descripcion AS TipoVentaDescripcion
+	,'AComercial-Preventas entregadas 0KM'
+	,u.IDFabrica
+
+FROM sta.Preventas PV
+LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+LEFT OUTER JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+LEFT OUTER JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+LEFT OUTER JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
+LEFT OUTER JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
+LEFT OUTER JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+LEFT OUTER JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+LEFT OUTER JOIN sta.Unidades U ON U.Preventa = PV.Numero
+LEFT OUTER JOIN sta.Comprobantes C ON U.Factura = c.CONTROL
+LEFT OUTER JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+LEFT OUTER JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
+
+WHERE PV.TipoPV='O' AND PV.Anulada=0 AND PV.TipoDeVentaID<>2 AND U.FechaSalida IS NOT NULL
+
+--SECCION ADMINISTRACION CONTABLE ---
+--1--------------------------------------------------- AContable-Saldo pendiente contado
+
+INSERT INTO [Tableros].dwd.StoreManagerHist
+(  
+
+fecha
+,sucursalNombre
+--PVNumero
+,importe
+,referencia
+--origen
+,descripcionOperativa
+,color
+--unidadTipo
+--Ubicacion
+--fcNumero
+,indicador
+,motivo
+
+)
+SELECT 
+        PV.Fecha,
+		SDV.Nombre AS Sucursal,
+		        SUM(DC.Saldo) AS Importe
+		      --CASE  
+        --WHEN View_GXP.TotalGasto is null then 0 
+        --ELSE View_GXP.TotalGasto
+        --END AS TotalGastosPV,
+  --      CASE  
+  --      WHEN View_GXP.TotalGasto is null then PV.PrecioVenta 
+  --      ELSE (View_GXP.TotalGasto+PV.PrecioVenta)
+  --      END AS TotalPV,
+		----PV.PrecioVenta,
+        ,DC.Referencia
+		,M.DescripcionOperativa
+		,COL.Descripcion
+       -- CLI.Nombre,
+      --  M.DescripcionFormal,
+     --   V.Nombre AS Vendedor,
+        --F.Nombre,
+		,'AContable-Saldo pendiente contado (1)'  
+        --PV.CotizacionDolar,
+        --U.IDFabrica,
+        --F.Nombre as Familia,
+        
+         ,    DC.Motivo
+        
+FROM 
+    sta.DetCash AS DC
+        INNER JOIN sta.Preventas PV
+        ON PV.Numero=DC.Referencia
+        LEFT OUTER JOIN sta.Clientes CLI
+        ON CLI.Codigo=PV.Cliente
+        LEFT OUTER JOIN sta.SucursalesDeventa SDV
+        ON SDV.Numero=PV.Sucursal
+        LEFT OUTER JOIN sta.Modelos M
+        ON M.Modelo=PV.Modelo
+        LEFT OUTER JOIN sta.Familias F
+        ON F.FamiliaID=M.Familia
+        LEFT OUTER JOIN sta.Vendedores V
+        ON V.VendedorId=pv.VendedorID
+        LEFT OUTER JOIN sta.GastosPorPreventa View_GXP
+        ON View_GXP.PrevtaID=PV.PrevtaID
+        LEFT OUTER JOIN sta.Colores COL
+        ON COL.ColorID=PV.ColorID
+        LEFT OUTER JOIN sta.Unidades U
+        ON U.Preventa=PV.Numero
+
+        WHERE 
+    PV.Anulada=0 and PV.TipoDeVentaID <>2 and DC.motivo in ('SENA',
+'0KM',
+'GSO',
+'US',
+'ACCE',
+'RESML',
+'SALCEFE$',
+'SALCEFEUSD',
+'SALTRA$',
+'SALTRAUSD',
+'SALTUSADO'
+,'CHEQUE'
+,'DOKM'
+) -- se podria agregar financiado como 'FP'
+GROUP BY 
+    DC.Referencia,DC.Motivo,SDV.Nombre,YEAR(PV.Fecha),MONTH(PV.Fecha), PV.Fecha, CLI.Nombre,M.DescripcionFormal,V.Nombre,PV.PrecioVenta,View_GXP.TotalGasto, PV.CotizacionDolar,COL.Descripcion,U.IDFabrica,PV.PrecioLista,F.Nombre,M.DescripcionOperativa
+HAVING 
+    SUM(DC.Saldo) <> 0
+        ORDER BY YEAR(PV.Fecha),MONTH(PV.Fecha),SDV.Nombre
+
+
+----------------------------------------------------- AContable-Saldo pendiente financiado (2)
+
+INSERT INTO [Tableros].dwd.StoreManagerHist
+(  
+fecha
+,sucursalNombre
+--PVNumero
+,importe
+,referencia
+--origen
+,descripcionOperativa
+,color
+--unidadTipo
+--Ubicacion
+--fcNumero
+,indicador
+,Motivo
+)
+SELECT 
+        PV.Fecha,
+		SDV.Nombre AS Sucursal,
+	    SUM(DC.Saldo) AS Importe
+		--CASE  
+        --WHEN View_GXP.TotalGasto is null then 0 
+        --ELSE View_GXP.TotalGasto
+        --END AS TotalGastosPV,
+  --      CASE  
+  --      WHEN View_GXP.TotalGasto is null then PV.PrecioVenta 
+  --      ELSE (View_GXP.TotalGasto+PV.PrecioVenta)
+  --      END AS TotalPV,
+		----PV.PrecioVenta,
+        ,DC.Referencia
+		,M.DescripcionOperativa
+		,COL.Descripcion
+        --CLI.Nombre,
+        --M.DescripcionFormal,
+        -- V.Nombre AS Vendedor,
+        --F.Nombre,
+		,'AContable-Saldo pendiente financiado'
+        --PV.CotizacionDolar,
+        --U.IDFabrica,
+        --F.Nombre as Familia,
+        ,DC.Motivo
+        
+FROM 
+    sta.DetCash AS DC
+        INNER JOIN sta.Preventas PV
+        ON PV.Numero=DC.Referencia
+        LEFT OUTER JOIN sta.Clientes CLI
+        ON CLI.Codigo=PV.Cliente
+        LEFT OUTER JOIN sta.SucursalesDeventa SDV
+        ON SDV.Numero=PV.Sucursal
+        LEFT OUTER JOIN sta.Modelos M
+        ON M.Modelo=PV.Modelo
+        LEFT OUTER JOIN sta.Familias F
+        ON F.FamiliaID=M.Familia
+        LEFT OUTER JOIN sta.Vendedores V
+        ON V.VendedorId=pv.VendedorID
+        LEFT OUTER JOIN sta.GastosPorPreventa View_GXP
+        ON View_GXP.PrevtaID=PV.PrevtaID
+        LEFT OUTER JOIN sta.Colores COL
+        ON COL.ColorID=PV.ColorID
+        LEFT OUTER JOIN sta.Unidades U
+        ON U.Preventa=PV.Numero
+
+        WHERE 
+    PV.Anulada=0 and PV.TipoDeVentaID <>2 and DC.motivo in ('FINAN', 'FINANS','FP' ) -- se podria agregar financiado como 'FP'
+GROUP BY 
+    DC.Referencia,DC.Motivo,SDV.Nombre,YEAR(PV.Fecha),MONTH(PV.Fecha), PV.Fecha, CLI.Nombre,M.DescripcionFormal,V.Nombre,PV.PrecioVenta,View_GXP.TotalGasto, PV.CotizacionDolar,COL.Descripcion,U.IDFabrica,PV.PrecioLista,F.Nombre,M.DescripcionOperativa
+HAVING 
+    SUM(DC.Saldo) <> 0
+        ORDER BY YEAR(PV.Fecha),MONTH(PV.Fecha),SDV.Nombre
+
+----------------------------------------------------- AContable-Saldo pendiente usados 
+
+INSERT INTO [Tableros].dwd.StoreManagerHist
+(  
+
+fecha
+,sucursalNombre
+--,PVNumero
+,importe
+,referencia
+--origen
+--,descripcionOperativa
+--,color
+--unidadTipo
+--Ubicacion
+--fcNumero
+,indicador
+,motivo
+
+)
+
+SELECT 
+	PV.Fecha
+	,SDV.Nombre AS Sucursal
+	--,pv.numero
+		,SUM(DC.Saldo) AS Importe
+	,DC.Referencia
+	--,CLI.Nombre
+	--,U.patente
+	--,U.marca
+	--,U.Modelo
+	--,PV.PrecioVenta
+	--,CASE 
+	--	WHEN View_GXP.TotalGasto IS NULL
+	--		THEN PV.PrecioVenta
+	--	ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
+	--	END AS TotalPV
+	--,PV.CotizacionDolar
+	,'AContable-Saldo pendiente usados'
+	,DC.Motivo
+
+FROM sta.DetCash_sai_caja AS DC
+INNER JOIN sta.Preventas_sai_caja PV ON PV.Numero = DC.Referencia
+LEFT OUTER JOIN sta.Clientes_sai_caja CLI ON CLI.Codigo = PV.Cliente
+LEFT OUTER JOIN sta.SucursalesDeventa_sai_caja SDV ON SDV.Numero = PV.Sucursal
+LEFT OUTER JOIN sta.Modelos_sai_caja M ON M.Modelo = PV.Modelo
+LEFT OUTER JOIN sta.Familias_sai_caja F ON F.FamiliaID = M.Familia
+LEFT OUTER JOIN sta.Vendedores_sai_caja V ON V.VendedorId = pv.VendedorID
+LEFT OUTER JOIN sta.GastosPorPreventa_sai_caja View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+LEFT OUTER JOIN sta.Colores_sai_caja COL ON COL.ColorID = PV.ColorID
+LEFT OUTER JOIN sta.Usados_sai_caja U ON U.Preventa = PV.Numero
+WHERE PV.Anulada = 0
+	AND DC.motivo IN (
+		'GSU'
+		,'COBU'
+		,'FPU'
+		,'FINANC 2'
+		,'DIF.C USAD'
+		,'GS TOMA US'
+		,'COM USADO'
+		,'SS1'
+		,'SALTUSADO2'
+		,'CON'
+		)
+	AND PV.TipoPv = 'U' -- Por seguridad agregamos el filtroTipoPV=U para que solo tenga en cuenta las PV de Usados
+GROUP BY DC.Referencia
+	,DC.Motivo
+	,SDV.Nombre
+	,YEAR(PV.Fecha)
+	,MONTH(PV.Fecha)
+	,PV.Fecha
+	,CLI.Nombre
+	,PV.PrecioVenta
+	,PV.CotizacionDolar
+	,PV.PrecioLista
+	,U.patente
+	,U.marca
+	,View_GXP.TotalGasto
+	,U.Modelo
+HAVING SUM(DC.Saldo) <> 0
+ORDER BY YEAR(PV.Fecha)
+	,MONTH(PV.Fecha)
+	,SDV.Nombre
+
+----------------------------------------------------- AContable-Saldo pendiente usados Financiado
+
+INSERT INTO [Tableros].dwd.StoreManagerHist (
+	fecha
+	,sucursalNombre
+	--PVNumero
+	,importe
+	,referencia
+	--origen
+	,descripcionOperativa
+	,color
+	--unidadTipo
+	--Ubicacion
+	--fcNumero
+	,indicador
+	)
+SELECT PV.Fecha
+	,SDV.Nombre AS Sucursal
+	,SUM(DC.Saldo) AS Importe
+	--CASE  
+	--WHEN View_GXP.TotalGasto is null then 0 
+	--ELSE View_GXP.TotalGasto
+	--END AS TotalGastosPV,
+	--      CASE  
+	--      WHEN View_GXP.TotalGasto is null then PV.PrecioVenta 
+	--      ELSE (View_GXP.TotalGasto+PV.PrecioVenta)
+	--      END AS TotalPV,
+	----PV.PrecioVenta,
+	,DC.Referencia
+	,M.DescripcionOperativa
+	,COL.Descripcion
+	-- CLI.Nombre,
+	--  M.DescripcionFormal,
+	--   V.Nombre AS Vendedor,
+	--F.Nombre,
+	,'AContable-Saldo pendiente usados Financiado'
+--PV.CotizacionDolar,
+--U.IDFabrica,
+--F.Nombre as Familia,
+--       DC.Motivo,
+FROM sta.DetCash_SAI_CAJA AS DC
+INNER JOIN sta.Preventas_SAI_CAJA PV ON PV.Numero = DC.Referencia
+LEFT OUTER JOIN sta.Clientes_SAI_CAJA  CLI ON CLI.Codigo = PV.Cliente
+LEFT OUTER JOIN sta.SucursalesDeventa_SAI_CAJA  SDV ON SDV.Numero = PV.Sucursal
+LEFT OUTER JOIN sta.Modelos_SAI_CAJA  M ON M.Modelo = PV.Modelo
+LEFT OUTER JOIN sta.Familias_SAI_CAJA  F ON F.FamiliaID = M.Familia
+LEFT OUTER JOIN sta.Vendedores_SAI_CAJA  V ON V.VendedorId = pv.VendedorID
+LEFT OUTER JOIN sta.GastosPorPreventa_SAI_CAJA  View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+LEFT OUTER JOIN sta.Colores_SAI_CAJA  COL ON COL.ColorID = PV.ColorID
+LEFT OUTER JOIN sta.Unidades_SAI_CAJA  U ON U.Preventa = PV.Numero
+WHERE PV.Anulada = 0
+	AND PV.TipoDeVentaID <> 2
+	AND DC.motivo IN (
+		'COBU'
+		,'CON'
+		,'FINANC 2'
+		) -- se podria agregar financiado como 'FP'
+GROUP BY DC.Referencia
+	,DC.Motivo
+	,SDV.Nombre
+	,YEAR(PV.Fecha)
+	,MONTH(PV.Fecha)
+	,PV.Fecha
+	,CLI.Nombre
+	,M.DescripcionFormal
+	,V.Nombre
+	,PV.PrecioVenta
+	,View_GXP.TotalGasto
+	,PV.CotizacionDolar
+	,COL.Descripcion
+	,U.IDFabrica
+	,PV.PrecioLista
+	,F.Nombre
+	,M.DescripcionOperativa
+HAVING SUM(DC.Saldo) <> 0
+ORDER BY YEAR(PV.Fecha)
+	,MONTH(PV.Fecha)
+	,SDV.Nombre
+
+----------------------------------------------------- AContable-Saldo pendiente tarjeta
+INSERT INTO [Tableros].dwd.StoreManagerHist (
+	fecha
+	,sucursalNombre
+	,PVNumero
+	,importe
+	,referencia
+	--origen
+	--,descripcionOperativa
+	--,color
+	--unidadTipo
+	--Ubicacion
+	--fcNumero
+	,indicador
+	,motivo
+	)
+SELECT 
+
+	PV.Fecha
+	,SDV.Nombre AS Sucursal
+	,pv.Numero
+	,SUM(DC.Saldo) AS Importe
+	,DC.Referencia
+	--,CLI.Nombre
+	--,M.DescripcionFormal
+	--,V.Nombre AS Vendedor
+	--,F.Nombre
+	--,PV.PrecioVenta
+	--,CASE 
+	--	WHEN View_GXP.TotalGasto IS NULL
+	--		THEN 0
+	--	ELSE View_GXP.TotalGasto
+	--	END AS TotalGastosPV
+	--,CASE 
+	--	WHEN View_GXP.TotalGasto IS NULL
+	--		THEN PV.PrecioVenta
+	--	ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
+	--	END AS TotalPV
+	--,PV.CotizacionDolar
+	--,COL.Descripcion
+	--,U.IDFabrica
+	--,F.Nombre AS Familia
+	--,M.DescripcionOperativa
+	
+	,'AContable-Saldo pendiente tarjeta'
+	,DC.Motivo
+FROM sta.DetCash AS DC
+INNER JOIN sta.Preventas PV ON PV.Numero = DC.Referencia
+LEFT OUTER JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+LEFT OUTER JOIN sta.Modelos M ON M.Modelo = PV.Modelo
+LEFT OUTER JOIN sta.Familias F ON F.FamiliaID = M.Familia
+LEFT OUTER JOIN sta.Vendedores V ON V.VendedorId = pv.VendedorID
+LEFT OUTER JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+LEFT OUTER JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+LEFT OUTER JOIN sta.Unidades U ON U.Preventa = PV.Numero
+WHERE PV.Anulada = 0
+	AND PV.TipoDeVentaID <> 2
+	AND DC.motivo IN (
+		'SDOTC'
+		,'SDOTCS'
+		,'STODTARJ'
+		)
+GROUP BY 
+   PV.Fecha,
+    SDV.Nombre,
+    PV.Numero,
+    DC.Referencia
+--DC.Referencia
+	,DC.Motivo
+--	,SDV.Nombre
+--	,YEAR(PV.Fecha)
+--	,MONTH(PV.Fecha)
+--	,PV.Fecha
+--	,CLI.Nombre
+--	,M.DescripcionFormal
+--	,V.Nombre
+--	,PV.PrecioVenta
+--	,View_GXP.TotalGasto
+--	,PV.CotizacionDolar
+--	,COL.Descripcion
+--	,U.IDFabrica
+--	,PV.PrecioLista
+--	,F.Nombre
+--	,M.DescripcionOperativa
+HAVING SUM(DC.Saldo) <> 0
+ORDER BY YEAR(PV.Fecha)
+	,MONTH(PV.Fecha)
+	,SDV.Nombre
+
+
+
+
+----------------------------------------------------- AContable-Preventas 0KM con saldo pendiente $/Q
+
+INSERT INTO [Tableros].dwd.StoreManagerHist
+(  
+
+fecha
+,sucursalNombre
+--PVNumero
+,importe
+,referencia
+--origen
+,descripcionOperativa
+,color
+--unidadTipo
+--Ubicacion
+--fcNumero
+,indicador
+,motivo
+)
+SELECT 
+        PV.Fecha,
+		SDV.Nombre AS Sucursal,
+		        SUM(DC.Saldo) AS Importe
+
+		      --CASE  
+        --WHEN View_GXP.TotalGasto is null then 0 
+        --ELSE View_GXP.TotalGasto
+        --END AS TotalGastosPV,
+  --      CASE  
+  --      WHEN View_GXP.TotalGasto is null then PV.PrecioVenta 
+  --      ELSE (View_GXP.TotalGasto+PV.PrecioVenta)
+  --      END AS TotalPV,
+		----PV.PrecioVenta,
+        ,DC.Referencia
+		,M.DescripcionOperativa
+		,COL.Descripcion
+       -- CLI.Nombre,
+      --  M.DescripcionFormal,
+     --   V.Nombre AS Vendedor,
+        --F.Nombre,
+		,'AContable-Preventas 0KM con saldo pendiente $/Q'
+		
+  
+        --PV.CotizacionDolar,
+        
+        --U.IDFabrica,
+        --F.Nombre as Familia,
+        
+         ,       DC.Motivo
+        
+FROM 
+    sta.DetCash AS DC
+        INNER JOIN sta.Preventas PV
+        ON PV.Numero=DC.Referencia
+        LEFT OUTER JOIN sta.Clientes CLI
+        ON CLI.Codigo=PV.Cliente
+        LEFT OUTER JOIN sta.SucursalesDeventa SDV
+        ON SDV.Numero=PV.Sucursal
+        LEFT OUTER JOIN sta.Modelos M
+        ON M.Modelo=PV.Modelo
+        LEFT OUTER JOIN sta.Familias F
+        ON F.FamiliaID=M.Familia
+        LEFT OUTER JOIN sta.Vendedores V
+        ON V.VendedorId=pv.VendedorID
+        LEFT OUTER JOIN sta.GastosPorPreventa View_GXP
+        ON View_GXP.PrevtaID=PV.PrevtaID
+        LEFT OUTER JOIN sta.Colores COL
+        ON COL.ColorID=PV.ColorID
+        LEFT OUTER JOIN sta.Unidades U
+        ON U.Preventa=PV.Numero
+
+        WHERE 
+    PV.Anulada=0 and PV.TipoDeVentaID <>2 --and DC.motivo in ('FINAN', 'FINANS') -- se podria agregar financiado como 'FP'
+GROUP BY 
+    DC.Referencia,DC.Motivo,SDV.Nombre,YEAR(PV.Fecha),MONTH(PV.Fecha), PV.Fecha, CLI.Nombre,M.DescripcionFormal,V.Nombre,PV.PrecioVenta,View_GXP.TotalGasto, PV.CotizacionDolar,COL.Descripcion,U.IDFabrica,PV.PrecioLista,F.Nombre,M.DescripcionOperativa
+HAVING 
+    SUM(DC.Saldo) <> 0
+        ORDER BY YEAR(PV.Fecha),MONTH(PV.Fecha),SDV.Nombre
+
+
+
+
+--select * from Tableros.dwd.StoreManagerHist
+--execute dwd.sp_storemanagerhist
+
+END;
+GO
+
