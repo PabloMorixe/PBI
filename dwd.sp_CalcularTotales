@@ -1,0 +1,294 @@
+USE [Tableros]
+GO
+
+/****** Object:  StoredProcedure [dwd].[sp_CalcularTotales]    Script Date: 29/7/2025 20:45:01 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+CREATE PROCEDURE [dwd].[sp_CalcularTotales]
+--with encryption
+AS
+BEGIN
+
+
+IF OBJECT_ID('tableros.dwd.totales', 'U') IS NOT NULL
+    DROP TABLE tableros.dwd.totales;
+
+
+
+--ESTADO: 
+-- Preventa 0km  Tableros.dwd.
+--preventa usados Tableros.dwd.
+--patentamientos 1 y 2  Tableros.dwd.
+--seguros  Tableros.dwd.
+--accesorios indumentaria y repuestos.  Tableros.dwd.
+--taller $ cargo cliente. 
+
+create TABLE dwd.totales (
+    id INT IDENTITY(1,1) PRIMARY KEY,          -- Identificador único, autoincremental
+    fecha DATETIME NOT NULL,                   -- Fecha
+    anio AS YEAR(fecha),                       -- Año (columna calculada)
+    mes AS RIGHT(CONCAT('0', MONTH(fecha)), 2), -- Mes con dos cifras (columna calculada)
+    mesaño AS CONCAT(YEAR(fecha), '-', RIGHT(CONCAT('0', MONTH(fecha)), 2)), -- Año y mes concatenados
+    descripcion_fecha NVARCHAR(100),           -- Descripción de la fecha
+    area_de_negocio NVARCHAR(100),             -- Área de negocio
+    importe DECIMAL(38, 4),                    -- Importe con alta precisión
+    descripcion_importe NVARCHAR(50)           -- Descripción del importe
+	,sucursalNombre nvarchar(50)
+);
+
+--select * from dwd.totales
+----------------------------------------------------
+--MontoAcumuladoVentas0KM
+----------------------------------------------------
+INSERT INTO dwd.totales 
+(
+    fecha, 
+    descripcion_fecha, 
+    area_de_negocio,
+    importe,
+    descripcion_importe
+	,sucursalNombre
+)
+SELECT 
+    Fecha, -- Columna Fecha de la vista
+    'Fecha', -- Descripción fija
+    'Preventas 0Km', -- Unidad de negocio fija
+     CONVERT(DECIMAL(38, 4), [Importe]),
+    'importe' -- Descripción fija,
+	,CASE 
+        WHEN [SucursalNombre] IN ('Motoplex 0 KM DEVOTO', 'MOTOPLEX  DEVOTO') THEN 'Motoplex Devoto'
+        WHEN [SucursalNombre] IN ('Motoplex 0Km San Isidro', 'MOTOPLEX  SAN ISIDRO', 'Motoplex Accesorios San Isidro') THEN 'Motoplex San Isidro'
+        WHEN [SucursalNombre] IN ('Royal Enfield 0km Leloir', 'Royal Enfield Taller Leloir', 'Royal Enfield FCE Taller Leloir', 'ROYAL ENFIEL LELOIR', 'ROYAL ENFIELD LELOIR') THEN 'Royal Enfield Leloir'
+        WHEN [SucursalNombre] IN ('ROYAL ENFIELD DEVOTO', 'Royal Enfield 0 KM DEVOTO', 'POST VENTA DEVOTO', 'Post Venta Beiro 3349', 'Post Venta FCE Devoto', 'Sucursal Beiro') THEN 'Royal Enfield Devoto'
+        WHEN [SucursalNombre] IN ('QJ SAN ISIDRO', 'QJ SI POSTVENTA', 'QJ SI 0KM') THEN 'QJ San Isidro'
+        WHEN [SucursalNombre] IN ('KTM Palermo', 'KTM-CANAM PALERMO', 'KTM Palermo PostVenta', 'KTM Palermo Postventa FCE') THEN 'KTM Can Am Palermo'
+        WHEN [SucursalNombre] IN ('ROYAL ENFIELD VTE. LOPEZ', 'Royal Enfield FCE 0km VL', 'Royal Enfield 0 Km VL', 'Royal Enfield Postventa VL','Royal Enfield FCE Postventa') THEN 'Royal Enfield Vicente Lopez'
+        WHEN [SucursalNombre] IN ('NUUV PALERMO', 'Nuuv Palermo Accesorios', 'Nuuv Palermo 0km') THEN 'Nuuv Palermo'
+        ELSE [SucursalNombre] -- Mantiene el valor original para sucursales no especificadas
+     END AS Sucursal_unificada
+FROM 
+    dwd.MontoAcumuladoVentas0KM;
+
+----------------------------------------------------
+--MontoAcumuladoVentasUsadosSAICAJA
+----------------------------------------------------
+INSERT INTO dwd.totales 
+(
+    fecha, 
+    descripcion_fecha, 
+    area_de_negocio,
+    importe,
+    descripcion_importe
+		,[SucursalNombre]
+
+
+)
+SELECT 
+    FechaPV, -- Columna Fecha de la vista
+    'FechaPV', -- Descripción fija
+    'Preventas Usados', -- Unidad de negocio fija
+     CONVERT(DECIMAL(38, 4), PrecioSugerido),
+    'PrecioSugerido' -- Descripción fija,
+			,CASE 
+        WHEN [NombreSucursal] IN ('Motoplex 0 KM DEVOTO', 'MOTOPLEX  DEVOTO') THEN 'Motoplex Devoto'
+        WHEN [NombreSucursal] IN ('Motoplex 0Km San Isidro', 'MOTOPLEX  SAN ISIDRO', 'Motoplex Accesorios San Isidro') THEN 'Motoplex San Isidro'
+        WHEN [NombreSucursal] IN ('Royal Enfield 0km Leloir', 'Royal Enfield Taller Leloir', 'Royal Enfield FCE Taller Leloir', 'ROYAL ENFIEL LELOIR', 'ROYAL ENFIELD LELOIR') THEN 'Royal Enfield Leloir'
+        WHEN [NombreSucursal] IN ('ROYAL ENFIELD DEVOTO', 'Royal Enfield 0 KM DEVOTO', 'POST VENTA DEVOTO', 'Post Venta Beiro 3349', 'Post Venta FCE Devoto', 'Sucursal Beiro') THEN 'Royal Enfield Devoto'
+        WHEN [NombreSucursal] IN ('QJ SAN ISIDRO', 'QJ SI POSTVENTA', 'QJ SI 0KM') THEN 'QJ San Isidro'
+        WHEN [NombreSucursal] IN ('KTM Palermo', 'KTM-CANAM PALERMO', 'KTM Palermo PostVenta', 'KTM Palermo Postventa FCE') THEN 'KTM Can Am Palermo'
+        WHEN [NombreSucursal] IN ('ROYAL ENFIELD VTE. LOPEZ', 'Royal Enfield FCE 0km VL', 'Royal Enfield 0 Km VL', 'Royal Enfield Postventa VL','Royal Enfield FCE Postventa') THEN 'Royal Enfield Vicente Lopez'
+        WHEN [NombreSucursal] IN ('NUUV PALERMO', 'Nuuv Palermo Accesorios', 'Nuuv Palermo 0km') THEN 'Nuuv Palermo'
+        ELSE [NombreSucursal] -- Mantiene el valor original para sucursales no especificadas
+     END AS Sucursal_unificada
+
+FROM 
+    dwd.MontoAcumuladoVentasUsadosSAICAJA;
+
+
+
+----------------------------------------------------
+--MontoAcumuladoPatentamientos
+----------------------------------------------------
+INSERT INTO dwd.totales 
+(
+    fecha, 
+    descripcion_fecha, 
+    area_de_negocio,
+    importe,
+    descripcion_importe
+			,[SucursalNombre]
+
+)
+SELECT 
+    Fecha, -- Columna Fecha de la vista
+    'Fecha', -- Descripción fija
+    'Patentamientos 1', -- Unidad de negocio fija
+     CONVERT(DECIMAL(38, 4), Total),
+    'Total' -- Descripción fija
+	,CASE 
+        WHEN [SucursalNombre] IN ('Motoplex 0 KM DEVOTO', 'MOTOPLEX  DEVOTO') THEN 'Motoplex Devoto'
+        WHEN [SucursalNombre] IN ('Motoplex 0Km San Isidro', 'MOTOPLEX  SAN ISIDRO', 'Motoplex Accesorios San Isidro') THEN 'Motoplex San Isidro'
+        WHEN [SucursalNombre] IN ('Royal Enfield 0km Leloir', 'Royal Enfield Taller Leloir', 'Royal Enfield FCE Taller Leloir', 'ROYAL ENFIEL LELOIR', 'ROYAL ENFIELD LELOIR') THEN 'Royal Enfield Leloir'
+        WHEN [SucursalNombre] IN ('ROYAL ENFIELD DEVOTO', 'Royal Enfield 0 KM DEVOTO', 'POST VENTA DEVOTO', 'Post Venta Beiro 3349', 'Post Venta FCE Devoto', 'Sucursal Beiro') THEN 'Royal Enfield Devoto'
+        WHEN [SucursalNombre] IN ('QJ SAN ISIDRO', 'QJ SI POSTVENTA', 'QJ SI 0KM') THEN 'QJ San Isidro'
+        WHEN [SucursalNombre] IN ('KTM Palermo', 'KTM-CANAM PALERMO', 'KTM Palermo PostVenta', 'KTM Palermo Postventa FCE') THEN 'KTM Can Am Palermo'
+        WHEN [SucursalNombre] IN ('ROYAL ENFIELD VTE. LOPEZ', 'Royal Enfield FCE 0km VL', 'Royal Enfield 0 Km VL', 'Royal Enfield Postventa VL','Royal Enfield FCE Postventa') THEN 'Royal Enfield Vicente Lopez'
+        WHEN [SucursalNombre] IN ('NUUV PALERMO', 'Nuuv Palermo Accesorios', 'Nuuv Palermo 0km') THEN 'Nuuv Palermo'
+        ELSE [SucursalNombre] -- Mantiene el valor original para sucursales no especificadas
+     END AS Sucursal_unificada
+FROM 
+   -- dwd.MontoAcumuladoPatentamientos; 02-abr-2025 cambiamos el from de MontoAcumuladoPatentamientos por [Patentamientos1] que se carga con datos que se llenan en el [sp_run_proceso] a la tabla especificada
+   [dwd].[Patentamientos1]
+
+
+
+----------------------------------------------------
+--MontoAcumuladoPatentamientos2
+----------------------------------------------------
+INSERT INTO dwd.totales 
+(
+    fecha, 
+    descripcion_fecha, 
+    area_de_negocio,
+    importe,
+    descripcion_importe
+			,[SucursalNombre]
+
+)
+SELECT 
+    Fecha, -- Columna Fecha de la vista
+    'Fecha', -- Descripción fija
+    'Patentamientos 2', -- Unidad de negocio fija
+     CONVERT(DECIMAL(38, 4), IMPORTE),
+    'IMPORTE' -- Descripción fija
+	,CASE 
+        WHEN [SucursalNombre] IN ('Motoplex 0 KM DEVOTO', 'MOTOPLEX  DEVOTO') THEN 'Motoplex Devoto'
+        WHEN [SucursalNombre] IN ('Motoplex 0Km San Isidro', 'MOTOPLEX  SAN ISIDRO', 'Motoplex Accesorios San Isidro') THEN 'Motoplex San Isidro'
+        WHEN [SucursalNombre] IN ('Royal Enfield 0km Leloir', 'Royal Enfield Taller Leloir', 'Royal Enfield FCE Taller Leloir', 'ROYAL ENFIEL LELOIR', 'ROYAL ENFIELD LELOIR') THEN 'Royal Enfield Leloir'
+        WHEN [SucursalNombre] IN ('ROYAL ENFIELD DEVOTO', 'Royal Enfield 0 KM DEVOTO', 'POST VENTA DEVOTO', 'Post Venta Beiro 3349', 'Post Venta FCE Devoto', 'Sucursal Beiro') THEN 'Royal Enfield Devoto'
+        WHEN [SucursalNombre] IN ('QJ SAN ISIDRO', 'QJ SI POSTVENTA', 'QJ SI 0KM') THEN 'QJ San Isidro'
+        WHEN [SucursalNombre] IN ('KTM Palermo', 'KTM-CANAM PALERMO', 'KTM Palermo PostVenta', 'KTM Palermo Postventa FCE') THEN 'KTM Can Am Palermo'
+        WHEN [SucursalNombre] IN ('ROYAL ENFIELD VTE. LOPEZ', 'Royal Enfield FCE 0km VL', 'Royal Enfield 0 Km VL', 'Royal Enfield Postventa VL','Royal Enfield FCE Postventa') THEN 'Royal Enfield Vicente Lopez'
+        WHEN [SucursalNombre] IN ('NUUV PALERMO', 'Nuuv Palermo Accesorios', 'Nuuv Palermo 0km') THEN 'Nuuv Palermo'
+        ELSE [SucursalNombre] -- Mantiene el valor original para sucursales no especificadas
+     END AS Sucursal_unificada
+
+FROM 
+    dwd.MontoAcumuladoPatentamientos2;
+
+
+----------------------------------------------------
+--MontoAcumuladoVentasSeguros
+----------------------------------------------------
+INSERT INTO dwd.totales 
+(
+    fecha, 
+    descripcion_fecha, 
+    area_de_negocio,
+    importe,
+    descripcion_importe
+			,[SucursalNombre]
+
+)
+SELECT 
+    Fechacontable, -- Columna Fecha de la vista
+    'Fecha', -- Descripción fija
+    'Seguros', -- Unidad de negocio fija
+     CONVERT(DECIMAL(38, 4), GRAVADO),
+    'GRAVADO' -- Descripción fija
+	,CASE 
+        WHEN [Sucursal] IN ('Motoplex 0 KM DEVOTO', 'MOTOPLEX  DEVOTO') THEN 'Motoplex Devoto'
+        WHEN [Sucursal] IN ('Motoplex 0Km San Isidro', 'MOTOPLEX  SAN ISIDRO', 'Motoplex Accesorios San Isidro') THEN 'Motoplex San Isidro'
+        WHEN [Sucursal] IN ('Royal Enfield 0km Leloir', 'Royal Enfield Taller Leloir', 'Royal Enfield FCE Taller Leloir', 'ROYAL ENFIEL LELOIR', 'ROYAL ENFIELD LELOIR') THEN 'Royal Enfield Leloir'
+        WHEN [Sucursal] IN ('ROYAL ENFIELD DEVOTO', 'Royal Enfield 0 KM DEVOTO', 'POST VENTA DEVOTO', 'Post Venta Beiro 3349', 'Post Venta FCE Devoto', 'Sucursal Beiro') THEN 'Royal Enfield Devoto'
+        WHEN [Sucursal] IN ('QJ SAN ISIDRO', 'QJ SI POSTVENTA', 'QJ SI 0KM') THEN 'QJ San Isidro'
+        WHEN [Sucursal] IN ('KTM Palermo', 'KTM-CANAM PALERMO', 'KTM Palermo PostVenta', 'KTM Palermo Postventa FCE') THEN 'KTM Can Am Palermo'
+        WHEN [Sucursal] IN ('ROYAL ENFIELD VTE. LOPEZ', 'Royal Enfield FCE 0km VL', 'Royal Enfield 0 Km VL', 'Royal Enfield Postventa VL','Royal Enfield FCE Postventa') THEN 'Royal Enfield Vicente Lopez'
+        WHEN [Sucursal] IN ('NUUV PALERMO', 'Nuuv Palermo Accesorios', 'Nuuv Palermo 0km') THEN 'Nuuv Palermo'
+        ELSE [Sucursal] -- Mantiene el valor original para sucursales no especificadas
+     END AS Sucursal_unificada
+
+FROM 
+    dwd.MontoAcumuladoVtaSeguros;
+
+
+----------------------------------------------------
+--vw_Monto AcumuladoVtaAccesorios
+----------------------------------------------------
+INSERT INTO dwd.totales 
+(
+    fecha, 
+    descripcion_fecha, 
+    area_de_negocio,
+    importe,
+    descripcion_importe
+			,[SucursalNombre]
+
+)
+SELECT 
+    FechaContable, -- Columna Fecha de la vista
+    '[FechaContable]', -- Descripción fija
+    'A&I - Repuestos', -- Unidad de negocio fija
+     CONVERT(DECIMAL(38, 4), Total),
+    'Total' -- Descripción fija
+	,CASE 
+        WHEN [SucursalContable] IN ('Motoplex 0 KM DEVOTO', 'MOTOPLEX  DEVOTO') THEN 'Motoplex Devoto'
+        WHEN [SucursalContable] IN ('Motoplex 0Km San Isidro', 'MOTOPLEX  SAN ISIDRO', 'Motoplex Accesorios San Isidro') THEN 'Motoplex San Isidro'
+        WHEN [SucursalContable] IN ('Royal Enfield 0km Leloir', 'Royal Enfield Taller Leloir', 'Royal Enfield FCE Taller Leloir', 'ROYAL ENFIEL LELOIR', 'ROYAL ENFIELD LELOIR') THEN 'Royal Enfield Leloir'
+        WHEN [SucursalContable] IN ('ROYAL ENFIELD DEVOTO', 'Royal Enfield 0 KM DEVOTO', 'POST VENTA DEVOTO', 'Post Venta Beiro 3349', 'Post Venta FCE Devoto', 'Sucursal Beiro') THEN 'Royal Enfield Devoto'
+        WHEN [SucursalContable] IN ('QJ SAN ISIDRO', 'QJ SI POSTVENTA', 'QJ SI 0KM') THEN 'QJ San Isidro'
+        WHEN [SucursalContable] IN ('KTM Palermo', 'KTM-CANAM PALERMO', 'KTM Palermo PostVenta', 'KTM Palermo Postventa FCE') THEN 'KTM Can Am Palermo'
+        WHEN [SucursalContable] IN ('ROYAL ENFIELD VTE. LOPEZ', 'Royal Enfield FCE 0km VL', 'Royal Enfield 0 Km VL', 'Royal Enfield Postventa VL','Royal Enfield FCE Postventa') THEN 'Royal Enfield Vicente Lopez'
+        WHEN [SucursalContable] IN ('NUUV PALERMO', 'Nuuv Palermo Accesorios', 'Nuuv Palermo 0km') THEN 'Nuuv Palermo'
+        ELSE [SucursalContable] -- Mantiene el valor original para sucursales no especificadas
+     END AS Sucursal_unificada
+
+FROM 
+    dwd.[vw_Monto AcumuladoVtaAccesorios];
+
+
+----------------------------------------------------
+--vw_MontoAcumuladoVentaOrdenesTallerCargoCliente
+----------------------------------------------------
+INSERT INTO dwd.totales 
+(
+    fecha, 
+    descripcion_fecha, 
+    area_de_negocio,
+    importe,
+    descripcion_importe
+			,[SucursalNombre]
+
+)
+SELECT 
+    FechaContable, -- Columna Fecha de la vista
+    'FechaContable', -- Descripción fija
+    'Taller Cargo Cliente', -- Unidad de negocio fija
+     CONVERT(DECIMAL(38, 4), IMPORTE),
+    'importe' -- Descripción fija
+	,CASE 
+        WHEN [SucursalContable] IN ('Motoplex 0 KM DEVOTO','MOTOPLEX  DEVOTO') THEN 'Motoplex Devoto'
+        WHEN [SucursalContable] IN ('Motoplex 0Km San Isidro', 'MOTOPLEX  SAN ISIDRO', 'Motoplex Accesorios San Isidro') THEN 'Motoplex San Isidro'
+        WHEN [SucursalContable] IN ('Royal Enfield 0km Leloir', 'Royal Enfield Taller Leloir', 'Royal Enfield FCE Taller Leloir', 'ROYAL ENFIEL LELOIR', 'ROYAL ENFIELD LELOIR') THEN 'Royal Enfield Leloir'
+        WHEN [SucursalContable] IN ('ROYAL ENFIELD DEVOTO', 'Royal Enfield 0 KM DEVOTO', 'POST VENTA DEVOTO', 'Post Venta Beiro 3349', 'Post Venta FCE Devoto', 'Sucursal Beiro') THEN 'Royal Enfield Devoto'
+        WHEN [SucursalContable] IN ('QJ SAN ISIDRO', 'QJ SI POSTVENTA', 'QJ SI 0KM') THEN 'QJ San Isidro'
+        WHEN [SucursalContable] IN ('KTM Palermo', 'KTM-CANAM PALERMO', 'KTM Palermo PostVenta', 'KTM Palermo Postventa FCE') THEN 'KTM Can Am Palermo'
+        WHEN [SucursalContable] IN ('ROYAL ENFIELD VTE. LOPEZ', 'Royal Enfield FCE 0km VL', 'Royal Enfield 0 Km VL', 'Royal Enfield Postventa VL','Royal Enfield FCE Postventa') THEN 'Royal Enfield Vicente Lopez'
+        WHEN [SucursalContable] IN ('NUUV PALERMO', 'Nuuv Palermo Accesorios', 'Nuuv Palermo 0km') THEN 'Nuuv Palermo'
+        ELSE [SucursalContable] -- Mantiene el valor original para sucursales no especificadas
+     END AS Sucursal_unificada
+
+FROM 
+    dwd.[vw_MontoAcumuladoVentaOrdenesTallerCargoCliente];
+
+
+--select * from dwd.totales
+
+END;
+GO
+
