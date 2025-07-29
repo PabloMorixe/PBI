@@ -1,0 +1,71 @@
+IF OBJECT_ID('[Tableros].dwd.MontoAcumuladoVentas0KM_TipoDeSaldo', 'U') IS NOT NULL
+    DROP TABLE [Tableros].dwd.MontoAcumuladoVentas0KM_TipoDeSaldo;
+
+CREATE TABLE [Tableros].dwd.MontoAcumuladoVentas0KM_TipoDeSaldo (
+    Fecha DATE NOT NULL,
+    Sucursal NVARCHAR(100),                -- Nombre de sucursal
+    Importe DECIMAL(18,2),                 -- Monto en pesos
+    Referencia nvarchar(15),                        -- Número de preventa referenciado
+    DescripcionOperativa NVARCHAR(200),   -- Descripción del modelo
+    Color NVARCHAR(100),                  -- Descripción del color
+    Motivo nvarchar(15),                           -- Código del motivo
+    DescripcionMotivo NVARCHAR(200),     -- Descripción del motivo
+    TipoDeSaldo NVARCHAR(50)             -- Clasificación del tipo de saldo
+);
+
+
+INSERT INTO [Tableros].dwd.MontoAcumuladoVentas0KM_TipoDeSaldo
+( 
+
+--fecha
+--,sucursalNombre
+----PVNumero
+--,importe
+--,referencia
+----origen
+--,descripcionOperativa
+--,color
+----unidadTipo
+----Ubicacion
+----fcNumero
+--,motivo
+--,DescripcionMotivo,
+--TipoDeSaldo
+    Fecha,
+    Sucursal,
+    Importe,
+    Referencia,
+    DescripcionOperativa,
+    Color,
+    Motivo,
+    DescripcionMotivo,
+    TipoDeSaldo
+)
+
+    SELECT 
+        PV.Fecha,
+        SDV.Nombre AS Sucursal,
+        --SUM(DC.Saldo) AS Importe,
+		DC.Importe,
+        DC.Referencia,
+        M.DescripcionOperativa,
+        COL.Descripcion,
+        DC.Motivo,
+		TDS.DescripcionMotivo,
+		TDS.TipoDeSaldo
+    FROM sta.DetCash AS DC
+    INNER JOIN sta.Preventas PV ON PV.Numero = DC.Referencia
+    LEFT OUTER JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+    LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+    LEFT OUTER JOIN sta.Modelos M ON M.Modelo = PV.Modelo
+    LEFT OUTER JOIN sta.Familias F ON F.FamiliaID = M.Familia
+    LEFT OUTER JOIN sta.Vendedores V ON V.VendedorId = PV.VendedorID
+    LEFT OUTER JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+    LEFT OUTER JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+    LEFT OUTER JOIN sta.Unidades U ON U.Preventa = PV.Numero
+	LEFT OUTER JOIN dwd.TiposDeSaldo TDS ON DC.Motivo = TDS.Motivo
+    WHERE PV.Anulada = 0 
+      AND PV.TipoDeVentaID <> 2 
+	  and  dc.origen <> 'RC'
+         GROUP BY DC.Referencia, DC.Motivo, SDV.Nombre,DC.Importe, YEAR(PV.Fecha), MONTH(PV.Fecha), PV.Fecha, CLI.Nombre, M.DescripcionFormal, V.Nombre, PV.PrecioVenta, View_GXP.TotalGasto, PV.CotizacionDolar, COL.Descripcion, U.IDFabrica, PV.PrecioLista, F.Nombre, M.DescripcionOperativa, 	TDS.DescripcionMotivo,
+		TDS.TipoDeSaldo
