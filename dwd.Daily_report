@@ -1,0 +1,64 @@
+USE [Tableros]
+GO
+
+/****** Object:  StoredProcedure [dwd].[Daily_report]    Script Date: 29/7/2025 20:43:46 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+CREATE PROCEDURE [dwd].[Daily_report]
+--with encryption
+
+AS
+BEGIN
+
+--INICIO LOGG--------------------------------------------------------------------
+				DECLARE @inicio datetime
+				DECLARE @RC int
+				DECLARE @procedimiento nvarchar(100)
+				DECLARE @operacion nvarchar(50)
+				DECLARE @cantReg int
+				DECLARE @mensaje nvarchar(max)
+				DECLARE @CantidadDeTablas INT;
+				set @inicio = getdate()
+
+				SELECT @CantidadDeTablas AS CantidadDeTablas;
+				EXECUTE @RC = [log].[sp_loguear_procesamiento] 
+					@procedimiento = '[Daily_report]', 
+					@operacion = 'Inicio', 
+					@cantReg = '',
+					@mensaje = '-INICIA [Daily_report]-';
+--LOGG-------------------------------------------------------------------- 
+
+--PROCESO
+--Dropea todas las tablas del schema STA y copia todas las tablas nuevamente
+EXEC sta.sp_Ingestar_sta;
+EXEC dwd.[sp_run_proceso]; --Aca excluimos la tabla de store manager. , jefe de taller y otros 
+--CALCULAR TOTALES resuelve -- > Daily Report	Gerencial		Indicadores Gerenciales V3
+execute dwd.sp_CalcularTotales
+
+   
+
+--INICIO LOGG--------------------------------------------------------------------
+							-- Calcular el tiempo transcurrido y asignarlo a @cantReg
+								SET @cantReg = DATEDIFF(SECOND, @inicio, GETDATE());
+								SELECT @CantidadDeTablas = COUNT(*)
+								FROM INFORMATION_SCHEMA.TABLES
+								WHERE TABLE_SCHEMA = 'STA';
+								-- variable @CantidadDeTablas 
+								SELECT @CantidadDeTablas AS CantidadDeTablas;
+								EXECUTE @RC = [log].[sp_loguear_procesamiento] 
+								@procedimiento = 'sp_IMPLEMENTACION', 
+								@operacion = 'FIN = duracion -->>> ', 
+								@cantReg = @cantreg,
+								@mensaje = '-FIN Implementacion-';
+--LOGG-------------------------------------------------------------------- 
+
+
+
+END;
+GO
+
