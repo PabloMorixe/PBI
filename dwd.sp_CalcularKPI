@@ -1,0 +1,462 @@
+USE [Tableros]
+GO
+
+/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI]    Script Date: 29/7/2025 20:44:25 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE  PROCEDURE [dwd].[sp_CalcularKPI]
+ --WITH ENCRYPTION -- Agrega encriptación
+--17/04/2025
+--
+AS
+BEGIN
+
+								SET NOCOUNT ON;	-- SET NOCOUNT ON added to prevent extra result sets from
+								EXEC dbo.GenerarCalendario;
+-----------------------------------------------------
+--INICIO LOGG
+-----------------------------------------------------
+								DECLARE @RC int
+								DECLARE @procedimiento nvarchar(100)
+								DECLARE @operacion nvarchar(50)
+								DECLARE @cantReg int
+								DECLARE @mensaje nvarchar(max)
+								DECLARE @CantidadDeTablas INT;
+								SELECT @CantidadDeTablas AS CantidadDeTablas;
+								EXECUTE @RC = [log].[sp_loguear_procesamiento] 
+									@procedimiento = '[sp_CalcularKPI]', 
+									@operacion = 'Inicio', 
+									@cantReg = '',
+									@mensaje = '- - -recopila [sp_CalcularKPI] - - -';
+-----------------------------------------------------
+--FIN  LOGG
+-----------------------------------------------------
+-----------------------------------------------------
+--Tabla de resultados
+-----------------------------------------------------
+							IF OBJECT_ID('tableros.dwd.ResultadosKPI', 'U') IS NOT NULL
+								DROP TABLE tableros.dwd.ResultadosKPI;
+							create TABLE dwd.ResultadosKPI (
+								id INT IDENTITY(1,1) PRIMARY KEY,     -- Identificador único, autoincremental
+								FechaDePedido DATETIME  ,    
+								FechaFacturaCP DATETIME  ,    
+								FechaDeRecepcion DATETIME  ,                   
+								fechaPV DATETIME  NULL,       
+								fechaFactura DATETIME NULL,
+								fechaPatentamiento DATETIME  ,                 
+								FechaSalidaProgramada DATETIME  ,                   
+								FechaSalida DATETIME  ,   
+								PVNumero  nvarchar(50) ,
+								mesaño nvarchar(7), 
+								motivo varchar(10),
+								sucursalNombre nvarchar(100),
+								IDFabrica varchar (15) ,
+								patente varchar(8),
+								ClienteNombre nvarchar(100)
+								,Modelo nvarchar(100)
+								,importe  float 
+								,referencia nvarchar (100)  --campo de notas manuales 
+								,origen varchar(50)
+								,descripcionOperativa  varchar(100)
+								,color varchar(50)
+								,unidadTipo  varchar(100)
+								,Ubicacion varchar(100)
+								,fcNumero varchar(30)
+								,indicadorKPI nvarchar(100) 
+								,KPIValue float
+								--Este campo, se utiliza como filtro para el indicador a mostrar. Coincidira con el titulo de cada seccion. 
+								--,Motivo nvarchar(100)-- este campo contiene el motivo deuda detcash 
+								--,cheque nvarchar(100) --este campo contiene el motivo deuda detcash 
+
+							);
+
+
+							--LLAVE - Key 
+							IF GETDATE() > '2027-03-01'
+							BEGIN
+								PRINT 'RENOVAR KEY'
+								DROP TABLE tableros.dwd.ResultadosKPI;
+							END
+
+----------------------------------------------------------------------------------------------------------
+-------------------------------------------------------Proceso-----------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+--A - Administración Contable---
+--A1--------------------------------------------------- ACont-LeadTime-FechaPreVTa/RemitoFechaSalida
+
+				;WITH PVSaldoCero AS (
+						SELECT 
+							SDV.Nombre AS Sucursal, 
+							PV.Fecha, 
+							DC.Referencia, 
+							DC.Motivo,
+							DC.Origen,
+							CLI.Nombre AS NombreCliente, 
+							M.DescripcionFormal, 
+							V.Nombre AS NombreVendedor, 
+							F.Nombre AS NombreFamilia, 
+							PV.PrecioVenta, 
+							CASE 
+								WHEN View_GXP.TotalGasto IS NULL THEN 0 
+								ELSE View_GXP.TotalGasto 
+							END AS TotalGastosPV, 
+							CASE 
+								WHEN View_GXP.TotalGasto IS NULL THEN PV.PrecioVenta 
+								ELSE (View_GXP.TotalGasto + PV.PrecioVenta) 
+							END AS TotalPV, 
+							PV.CotizacionDolar, 
+							COL.Descripcion, 
+							U.IDFabrica, 
+							M.DescripcionOperativa, 
+							SUM(DC.Saldo) AS Importe
+						FROM sta.DetCash AS DC 
+						INNER JOIN sta.Preventas AS PV ON PV.Numero = DC.Referencia 
+						LEFT OUTER JOIN sta.Clientes AS CLI ON CLI.Codigo = PV.Cliente 
+						LEFT OUTER JOIN sta.SucursalesDeventa AS SDV ON SDV.Numero = PV.Sucursal 
+						LEFT OUTER JOIN sta.Modelos AS M ON M.Modelo = PV.Modelo 
+						LEFT OUTER JOIN sta.Familias AS F ON F.FamiliaID = M.Familia 
+						LEFT OUTER JOIN sta.Vendedores AS V ON V.VendedorId = PV.VendedorID 
+						LEFT OUTER JOIN sta.GastosPorPreventa AS View_GXP ON View_GXP.PrevtaID = PV.PrevtaID 
+						LEFT OUTER JOIN sta.Colores AS COL ON COL.ColorID = PV.ColorID 
+						LEFT OUTER JOIN sta.Unidades AS U ON U.Preventa = PV.Numero
+						WHERE PV.Anulada = 0 AND PV.TipoDeVentaID <> 2
+						GROUP BY 
+							DC.Referencia, DC.Motivo, DC.Origen, SDV.Nombre, PV.Fecha, CLI.Nombre, M.DescripcionFormal, 
+							V.Nombre, PV.PrecioVenta, View_GXP.TotalGasto, PV.CotizacionDolar, 
+							COL.Descripcion, U.IDFabrica, PV.PrecioLista, F.Nombre, M.DescripcionOperativa
+						HAVING SUM(DC.Saldo) = 0
+					),
+					UltimosRecibos AS (
+						SELECT 
+							DC.Referencia,
+							DC.Motivo, 
+							DC.Origen, 
+							MAX(DC.Fecha) AS FechaRecibo
+						FROM sta.DetCash DC
+						WHERE DC.Origen LIKE 'RC'
+						GROUP BY DC.Referencia, DC.Motivo, DC.Origen
+					)
+
+				
+
+
+	INSERT INTO dwd.ResultadosKPI 
+	(
+		fechaPV,                
+		FechaSalida,
+		PVNumero,
+		mesaño,
+		motivo,
+		--sucursalNombre,
+		--IDFabrica,
+		--patente,
+		--ClienteNombre,
+		--Modelo,
+		--importe,
+		--referencia,   -- campo de notas manuales 
+		--origen,       -- sale de o.Nombre como marca
+		--descripcionOperativa,
+		--color,
+		--unidadTipo,
+		--Ubicacion,
+		--fcNumero,
+		indicadorKPI,
+		KPIValue      -- cálculo del lead time
+		
+	)
+		SELECT 
+					--	PVS.*,
+		fecha, 
+						UR.FechaRecibo, 
+		pvs.referencia,
+				 CONCAT(YEAR(UR.FechaRecibo), '-', RIGHT(CONCAT('0', MONTH(UR.FechaRecibo )), 2)) AS mesaño , -- <== aquí la lógica
+				PVS.Motivo, 
+				'ACont-LeadTime-FechaPreVTa/RemitoFechaSalida',
+						datediff (day, fecha,FechaRecibo) as diffenDias 
+					FROM PVSaldoCero PVS
+
+					INNER JOIN UltimosRecibos UR
+						ON PVS.Referencia = UR.Referencia
+						AND PVS.Motivo = UR.Motivo
+						AND PVS.Origen = UR.Origen
+						ORDER BY PVS.Referencia;
+
+
+
+
+
+--B - Administración Comercial---
+--B1--------------------------------------------------- ACom-LeadTime-FechaPreVTa/RemitoFechaSalida
+---Lead time entrega 0km: Tiempo entre fecha de pre venta y remito de entrega de 0km (remito de salida(fechasalida)
+	INSERT INTO dwd.ResultadosKPI 
+	(
+		fechaPV,                
+		FechaSalida,
+		PVNumero,
+		mesaño,
+		sucursalNombre,
+		IDFabrica,
+		patente,
+		ClienteNombre,
+		Modelo,
+		importe,
+		referencia,   -- campo de notas manuales 
+		origen,       -- sale de o.Nombre como marca
+		descripcionOperativa,
+		color,
+		unidadTipo,
+		Ubicacion,
+		fcNumero,
+		indicadorKPI,
+		KPIValue      -- cálculo del lead time
+		
+	)
+	SELECT 
+		 pv.Fecha AS fechaPV,
+		 U.FECHASALIDA AS FechaSalida,
+		 pv.Numero AS PVNumero,
+		 CONCAT(YEAR(U.FECHASALIDA ), '-', RIGHT(CONCAT('0', MONTH(U.FECHASALIDA )), 2)) AS mesaño , -- <== aquí la lógica
+		 SDV.Nombre AS sucursalNombre,
+		 u.IDFabrica,
+		 U.Patente,
+		 CLI.Nombre AS ClienteNombre,
+		 u.Modelo,
+		 CASE 
+			WHEN View_GXP.TotalGasto IS NULL THEN PV.PrecioVenta
+			ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
+		 END AS importe,
+		 pv.Numero AS referencia,
+		 o.Nombre AS origen,
+		 modl.DescripcionOperativa,
+		 COL.Descripcion AS color,
+		 u.UnidadTipo,
+		 ubi.Descripcion AS Ubicacion,
+		 u.Factura AS fcNumero,
+		 'ACom-LeadTime-FechaPreVTa/RemitoFechaSalida' AS indicadorKPI,
+		 DATEDIFF(DAY,pv.Fecha,  U.FECHASALIDA) AS KPIValue
+	FROM sta.Preventas PV
+	LEFT JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+	LEFT JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+	LEFT JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+	LEFT JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
+	LEFT JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
+	LEFT JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+	LEFT JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+	LEFT JOIN sta.Unidades U ON U.Preventa = PV.Numero
+	LEFT JOIN sta.Comprobantes C ON U.Factura = c.CONTROL
+	LEFT JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+	LEFT JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
+	LEFT JOIN sta.Ubicaciones UBI ON U.Ubicacion = UBI.UbicacionID
+	WHERE PV.TipoPV = 'O'
+		AND PV.Anulada = 0
+		AND U.FechaSalida IS NOT NULL
+		AND U.Facturada = 1
+		and U.Preventa <> 'co%'
+	--	and pv.Numero = 'PV 00262/4' 
+
+		--select * from sta.unidades
+		--select * from sta.Preventas
+		--select * from sta.
+--B2--------------------------------------------------- ACom-LeadTime-FcVta/Patentamiento
+---Lead time entre Fc Venta Vs Patentamiento: Tiempo entre que se hace una FC de venta 0km y se ingresa el patentamiento
+INSERT INTO dwd.ResultadosKPI 
+	(
+		fechafactura,                
+		FechaSalida,
+		PVNumero,
+		mesaño,
+		sucursalNombre,
+		IDFabrica,
+		patente,
+		ClienteNombre,
+		Modelo,
+		importe,
+		referencia,   -- campo de notas manuales 
+		origen,       -- sale de o.Nombre como marca
+		descripcionOperativa,
+		color,
+		unidadTipo,
+		Ubicacion,
+		fcNumero,
+		indicadorKPI,
+		KPIValue      -- cálculo del lead time
+		
+	)
+
+	SELECT 
+		 u.FacturaFecha,
+		 --pv.Fecha AS fechaPV,
+		 U.FECHASALIDA AS FechaSalida,
+		 pv.Numero AS PVNumero,
+		 CONCAT(YEAR(U.FECHASALIDA ), '-', RIGHT(CONCAT('0', MONTH(U.FECHASALIDA )), 2)) AS mesaño , -- <== aquí la lógica
+		 SDV.Nombre AS sucursalNombre,
+		 u.IDFabrica,
+		 U.Patente,
+		 CLI.Nombre AS ClienteNombre,
+		 u.Modelo,
+		 CASE 
+			WHEN View_GXP.TotalGasto IS NULL THEN PV.PrecioVenta
+			ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
+		 END AS importe,
+		 pv.Numero AS referencia,
+		 o.Nombre AS origen,
+		 modl.DescripcionOperativa,
+		 COL.Descripcion AS color,
+		 u.UnidadTipo,
+		 ubi.Descripcion AS Ubicacion,
+		 u.Factura AS fcNumero,
+		 'ACom-LeadTime-FcVta/Patentamiento' AS indicadorKPI,
+		 DATEDIFF(DAY,u.FacturaFecha,  U.FECHASALIDA) AS KPIValue
+	FROM sta.unidades u
+	--sta.Preventas PV
+	LEFT JOIN sta.Preventas PV ON U.Preventa = PV.Numero
+	LEFT JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+	LEFT JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+	LEFT JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+	LEFT JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
+	LEFT JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
+	LEFT JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+	LEFT JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+	--LEFT JOIN sta.Unidades U ON U.Preventa = PV.Numero
+	LEFT JOIN sta.Comprobantes C ON U.Factura = c.CONTROL
+	LEFT JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+	LEFT JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
+	LEFT JOIN sta.Ubicaciones UBI ON U.Ubicacion = UBI.UbicacionID
+	WHERE 
+	U.Facturada = 1
+	and U.FacturaFecha is not null 
+	and u.FechaPatentamiento is not null 
+	and U.Preventa <> 'co%'
+	
+
+--B3--------------------------------------------------- ACom-LeadTime-FechaPedido/FechaRecepcion
+---- Lead time tiempo recepción 0km: Tiempo entre que se ingresa un unidad a recibir y se carga el remito de recepción.
+INSERT INTO dwd.ResultadosKPI 
+	(
+		FechaDePedido,                
+		FechaDeRecepcion,
+		PVNumero,
+		mesaño,
+		sucursalNombre,
+		IDFabrica,
+		patente,
+		ClienteNombre,
+		Modelo,
+		importe,
+		referencia,   -- campo de notas manuales 
+		origen,       -- sale de o.Nombre como marca
+		descripcionOperativa,
+		color,
+		unidadTipo,
+		Ubicacion,
+		fcNumero,
+		indicadorKPI,
+		KPIValue      -- cálculo del lead time
+		
+	)
+
+	SELECT 
+		 u.FechaDePedido,
+		 --pv.Fecha AS fechaPV,
+		 U.FechaDeRecepcion,
+		 pv.Numero AS PVNumero,
+		 CONCAT(YEAR(U.FechaDeRecepcion ), '-', RIGHT(CONCAT('0', MONTH(U.FechaDeRecepcion )), 2)) AS mesaño , -- <== aquí la lógica
+		 SDV.Nombre AS sucursalNombre,
+		 u.IDFabrica,
+		 U.Patente,
+		 CLI.Nombre AS ClienteNombre,
+		 u.Modelo,
+		 CASE 
+			WHEN View_GXP.TotalGasto IS NULL THEN PV.PrecioVenta
+			ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
+		 END AS importe,
+		 pv.Numero AS referencia,
+		 o.Nombre AS origen,
+		 modl.DescripcionOperativa,
+		 COL.Descripcion AS color,
+		 u.UnidadTipo,
+		 ubi.Descripcion AS Ubicacion,
+		 u.Factura AS fcNumero,
+		 'ACom-LeadTime-FechaPedido/FechaRecepcion' AS indicadorKPI,
+		 DATEDIFF(DAY, U.FechaDePedido, u.FechaDeRecepcion) AS KPIValue
+	FROM sta.unidades u
+	--sta.Preventas PV
+	LEFT JOIN sta.Preventas PV ON U.Preventa = PV.Numero
+	LEFT JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+	LEFT JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+	LEFT JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+	LEFT JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
+	LEFT JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
+	LEFT JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+	LEFT JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+	--LEFT JOIN sta.Unidades U ON U.Preventa = PV.Numero
+	LEFT JOIN sta.Comprobantes C ON U.Factura = c.CONTROL
+	LEFT JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+	LEFT JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
+	LEFT JOIN sta.Ubicaciones UBI ON U.Ubicacion = UBI.UbicacionID
+	where u.FechaDeRecepcion is not null
+
+			
+
+--B4--------------------------------------------------- ACom-LeadTime-FechaCompra/FechaRecepcion
+----- Lead time ingreso de FC compra vs recepción de unidad
+;WITH FCcompraOKM AS (
+	SELECT     
+		U.UnidadID,
+		C.ObjetoAsociado AS IDFabrica,
+		C.Fecha AS FechaFactura,
+		C.Control AS NroFactura,
+		C.Origen, 
+		SUM(CASE WHEN C.Documento = 'NC' THEN C.Gravado * (-1) ELSE C.Gravado END) AS gravado,
+		SUM(CASE WHEN C.Documento = 'NC' THEN C.IVA * (-1) ELSE C.IVA END) AS iva, 
+		SUM(CASE WHEN C.Documento = 'NC' THEN C.Total ELSE C.Total * (-1) END) AS total
+	FROM sta.Comprobantes C 
+	LEFT JOIN SAI..referencias R ON C.Referencia = R.Referencia
+	LEFT JOIN sta.Unidades U ON C.ObjetoAsociado = U.IDFabrica
+	GROUP BY U.UnidadID, C.ObjetoAsociado, C.Origen, C.Fecha, C.Control
+	HAVING C.Origen = 'CPOKM'
+)
+INSERT INTO dwd.ResultadosKPI 
+(
+	FechaFacturaCP,                
+	FechaDeRecepcion,
+	mesaño,
+	IDFabrica,
+	indicadorKPI,
+	KPIValue		
+)
+SELECT 
+	fc.FechaFactura AS FechaFacturaCP, 
+	U.FechaDeRecepcion,
+	CONCAT(YEAR(U.FechaDeRecepcion), '-', RIGHT('0' + CAST(MONTH(U.FechaDeRecepcion) AS VARCHAR), 2)) AS mesaño,
+	FC.IDFabrica,
+	'ACom-LeadTime-FechaCompra/FechaRecepcion',
+	DATEDIFF(DAY, fc.FechaFactura, U.FechaDeRecepcion) AS KPIValue
+FROM sta.Unidades U
+INNER JOIN FCcompraOKM FC ON FC.IDFabrica = U.IDFabrica
+WHERE U.FechaDeRecepcion IS NOT NULL;
+  
+
+
+  
+--c - Comercial0KM
+--c1--------------------------------------------------- Com0KM-LeadTime-FechaPreVTa/RemitoFechaSalida
+---Lead time entrega 0km: Tiempo entre fecha de pre venta y remito de entrega de 0km (remito de salida(fechasalida)
+
+
+  select * from dwd.resultadosKPI where indicadorKPI = 'ACont-LeadTime-FechaPreVTa/RemitoFechaSalida'
+
+
+--select * from Tableros.dwd.ResultadosKPI where indicadorkpi = 'ACont-LeadTime-FechaCompra/FechaRecepcion' 
+--execute dwd.sp_CalcularKPI
+
+END
+
+
+GO
+
