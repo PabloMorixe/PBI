@@ -1,11 +1,14 @@
 USE [Tableros]
 GO
-/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI]    Script Date: 17/11/2025 21:50:02 ******/
+
+/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI]    Script Date: 21/11/2025 18:40:51 ******/
 SET ANSI_NULLS ON
 GO
+
 SET QUOTED_IDENTIFIER ON
 GO
-alter PROCEDURE [dwd].[sp_CalcularKPI]
+
+CREATE PROCEDURE [dwd].[sp_CalcularKPI]
  --WITH ENCRYPTION -- Agrega encriptación
 --17/04/2025
 --
@@ -31,7 +34,7 @@ BEGIN
 									@mensaje = '- - -recopila [sp_CalcularKPI] - - -';
 -----------------------------------------------------
 --FIN  LOGG
------------------------------------------------------
+-----------------------------------------------------nn
 -----------------------------------------------------
 --Tabla de resultados
 -----------------------------------------------------
@@ -73,6 +76,7 @@ BEGIN
 								,FormaDePago varchar(100)
 								,CobranzaNro varchar(100)
 								,CashID int
+								,Repuesto varchar(100)
 								--Este campo, se utiliza como filtro para el indicador a mostrar. Coincidira con el titulo de cada seccion. 
 								--,Motivo nvarchar(100)-- este campo contiene el motivo deuda detcash 
 								--,cheque nvarchar(100) --este campo contiene el motivo deuda detcash 
@@ -195,135 +199,6 @@ BEGIN
 
 			end
 --A - Administración Contable--- 
---KPI-41 EX A2--------------------------------------------------- ACont-LeadTime-fechafacturaRepuestosVsSaldocero
-
---COMPLETA V1
-
-
-									IF OBJECT_ID('tempdb..#DetCashResumen') IS NOT NULL
-										DROP TABLE #DetCashResumen;
-									
-									-------------------
-
-									;WITH Grupos AS (
-										SELECT
-											CashID,
-											CobranzaNro,
-											MIN(CASE WHEN Origen = 'VTREP' THEN Fecha END) AS FechaFactura,
-											MAX(CASE WHEN Origen = 'RC'    THEN Fecha END) AS FechaRecibo,
-											SUM(Importe) AS ImporteTotal,
-											SUM(CASE WHEN Origen = 'VTREP' THEN 1 ELSE 0 END) AS CantFacturas,
-											SUM(CASE WHEN Origen = 'RC'    THEN 1 ELSE 0 END) AS CantRecibos
-										FROM sta.DetCash
-										WHERE Origen IN ('VTREP','RC')
-										GROUP BY CobranzaNro, CashID
-										HAVING
-											SUM(CASE WHEN Origen = 'VTREP' THEN 1 ELSE 0 END) >= 1
-											AND SUM(CASE WHEN Origen = 'RC' THEN 1 ELSE 0 END) >= 1
-											AND ABS(SUM(Importe)) < 1
-									)
-									SELECT
-										dc.*,
-										g.FechaFactura,
-										g.FechaRecibo,
-										DATEDIFF(DAY, g.FechaFactura, g.FechaRecibo) AS DiasEntreFacturaYUltimoRecibo,
-										g.ImporteTotal
-									INTO #DetCashResumen
-									FROM sta.DetCash dc
-									JOIN Grupos g
-										  ON dc.CashID      = g.CashID
-										 AND dc.CobranzaNro = g.CobranzaNro
-									WHERE dc.Origen IN ('VTREP','RC');
-
-									-------------------
-
-									IF OBJECT_ID('tempdb..#DetCashResumenAgrupado') IS NOT NULL
-										DROP TABLE #DetCashResumenAgrupado;
-
-										-------------------
-									SELECT
-     
-										dcr.CobranzaNro,
-										dcr.Referencia,
-										MIN(dcr.FechaFactura)                    AS FechaFactura,
-										MAX(dcr.FechaRecibo)                     AS FechaRecibo,
-										MIN(dcr.DiasEntreFacturaYUltimoRecibo)   AS DiasEntreFacturaYUltimoRecibo,
-										SUM(dcr.Importe)                         AS ImporteTotalGrupo
-									INTO #DetCashResumenAgrupado
-									FROM #DetCashResumen dcr
-									WHERE dcr.CobranzaNro <> ''
-									 -- AND dcr.Referencia LIKE 'TR0000000001'
-									GROUP BY
-										dcr.CobranzaNro,
-										dcr.Referencia;
-
-										select * from #DetCashResumenAgrupado
-									-------------------
-								
-
-
-
-					-------------------------------------------
-	INSERT INTO dwd.ResultadosKPI 
-	(
-		fechaFactura,                
-		FechaRecibo,
-		mesaño,
-		sucursalNombre,
-		--IDFabrica,
-		--patente,
-		--ClienteNombre,
-		--Modelo,
-		--importe,
-		cobranzaNro,
-		referencia,   -- campo de notas manuales 
-		--origen,       -- sale de o.Nombre como marca
-		--descripcionOperativa,
-		--color,
-		--unidadTipo,
-		--Ubicacion,
-		--fcNumero,
-		cashid,
-		indicadorKPI,
-		KPIValue      -- cálculo del lead time
-		
-	)
-
-
-
-		select 
-		dca.FechaFactura,
-		dca.FechaRecibo,
-	    CONCAT(YEAR(dca.FechaRecibo ), '-', RIGHT(CONCAT('0', MONTH(dca.FechaRecibo )), 2)) AS mesaño,  -- <== aquí la lógica
-	   SCSV.sucursalVentaNombre
-	,		dca.CobranzaNro
-		,dca.Referencia
-		,cashID
-		,'ACont-LeadTime-fechafacturaRepuestosVsSaldocero'
-		,dca.DiasEntreFacturaYUltimoRecibo
-
-		from #DetCashResumenAgrupado dca 
-									left join sta.DetCash dc on dca.Referencia = dc.Referencia and dca.CobranzaNro = dc.CobranzaNro
-									left join sta.Recibos Rec on  Rec.[control] = dc.[Control]
-									left join dwd.SucContableSucVenta SCSV on rec.Sucursal =SCSV.SucContableNro
-									where dc.Comprobante like 'RC%' 
-									--and  dca.referencia = 'TR0000000001'
-
-									--and dc.Comprobante like 'RC%'
-					--				and ( select 
-					--sdv.Nombre 
-					--from sta.sucursalesdeventa sdv
-					
-					--where rec.Sucursal = sdv.numero
-		
-					--) is not null
-
-
-
-select * from dwd.ResultadosKPI  where indicadorKPI = 'ACont-LeadTime-fechafacturaRepuestosVsSaldocero'
-and referencia = 'TR0000000001'
-
---select * from sta.sucursalesdeventa
 
 --B - Administración Comercial---
 --B1--------------------------------------------------- ACom-LeadTime-FechaPreVTa/RemitoFechaSalida
@@ -950,100 +825,16 @@ WHERE
 
 
 
---KPI50---------------------
-
- --SELECT * FROM dwd.ResultadosKPI WHERE indicadorKPI = 'ComA&I'
-			INSERT INTO dwd.ResultadosKPI 
-			(
-				-- Fechas
-				fechaFactura,          -- usamos FechaContable como fecha de factura
-				mesaño,
-					sucursalNombre,
-
-				-- Info de sucursal / referencia / origen
-				--sucursalNombre,
-				importe,
-				referencia,
-				formadepago,
-				
-				descripcionOperativa,
-				fcNumero,
-
-				-- KPI
-				indicadorKPI,
-				KPIValue               -- usamos el total como valor del KPI
-			)
-		SELECT 
-    C.FechaContable                                                AS fechaFactura,
-    CONCAT(YEAR(C.FechaContable), '-', RIGHT(CONCAT('0', MONTH(C.FechaContable)), 2)) AS mesaño,
-
-    COALESCE(SDV.Nombre, 'ERROR SUCURSAL')                         AS sucursalNombre,  -- <== ACÁ LA MAGIA
-
-    CASE 
-        WHEN C.Documento = 'NC' THEN C.Total * -1 
-        ELSE C.Total
-    END                                                            AS importe,
-
-    C.Referencia,
-    C.CondicionVenta                                               as formadepago,
-    U.Descripcion                                                  AS descripcionOperativa,
-    C.Control                                                      AS fcNumero,
-
-    'ComA&I'                                                       AS indicadorKPI,
-
-    CASE 
-        WHEN C.Documento = 'NC' THEN C.Total * -1 
-        ELSE C.Total
-    END                                                            AS KPIValue
-FROM sta.Comprobantes C
-LEFT OUTER JOIN sta.Movim m               ON C.Asiento = M.MovNRO
-LEFT OUTER JOIN sta.UsuariosAccesos U     ON U.usuariosAccesoID = M.MovUsuarioID
-LEFT OUTER JOIN sta.CentrosDeCostos CC    ON CC.CentroID = C.CentroDeCosto
-LEFT OUTER JOIN sta.SucursalesContables SC ON C.Sucursal = SC.Numero
-LEFT JOIN sta.SucursalesDeventa SDV       ON SDV.SucursalContableRepuestos = SC.Numero
-WHERE 
-    C.Origen = 'VTREP';
 
 
 
 
-
---SELECT 
---    YEAR(C.FechaContable) AS ANIO,                           -- Año
---    RIGHT(CONCAT('0', MONTH(C.FechaContable)), 2) AS MES,    -- Mes con dos cifras
---    CONCAT(YEAR(C.FechaContable), '-', RIGHT(CONCAT('0', MONTH(C.FechaContable)), 2)) AS mesaño, -- Año y mes concatenados
-
-
---    --    YEAR(C.FechaContable) AS ANIO,
---    --    MONTH(C.FechaContable) as MES,        
---    --CONCAT(YEAR(C.FechaContable), '-', MONTH(C.FechaContable)) AS mesaño,
---    C.Sucursal,
---	SC.Nombre AS SucursalContable,         
---    C.FechaContable, 
---    C.Control,
---    C.Referencia,
---	C.CondicionVenta,
-	        
---    CASE 
---        WHEN C.Documento = 'NC' THEN C.total * -1 
---        ELSE C.total
---    END AS Total,
---	 U.Descripcion as NombreUsuario
-  
-
---FROM sta.Comprobantes C
---LEFT OUTER JOIN sta.Movim m     ON C.Asiento = M.MovNRO
---LEFT OUTER JOIN sta.UsuariosAccesos U     ON U.usuariosAccesoID = M.MovUsuarioID
---LEFT OUTER JOIN sta.CentrosDeCostos CC     ON CC.CentroID = C.CentroDeCosto
---LEFT OUTER JOIN sta.SucursalesContables SC 	ON C.Sucursal=SC.Numero
-	
---WHERE 
---    C.Origen = 'VTREP'
-
-						
 --select * from Tableros.dwd.ResultadosKPI where indicadorkpi = 'Com0KM-LeadTime-FechaPreVTa/RemitoFechaSalida'
 --execute dwd.sp_CalcularKPI
 
 END
+
+
+GO
 
 
