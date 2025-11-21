@@ -1,0 +1,354 @@
+USE [Tableros]
+GO
+/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI]    Script Date: 17/11/2025 21:50:02 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+alter PROCEDURE [dwd].[sp_CalcularKPI_PostVta]
+ --WITH ENCRYPTION -- Agrega encriptación
+--17/04/2025
+--
+AS
+BEGIN
+
+								SET NOCOUNT ON;	-- SET NOCOUNT ON added to prevent extra result sets from
+								EXEC dbo.GenerarCalendario;
+-----------------------------------------------------
+--INICIO LOGG
+-----------------------------------------------------
+								DECLARE @RC int
+								DECLARE @procedimiento nvarchar(100)
+								DECLARE @operacion nvarchar(50)
+								DECLARE @cantReg int
+								DECLARE @mensaje nvarchar(max)
+								DECLARE @CantidadDeTablas INT;
+								SELECT @CantidadDeTablas AS CantidadDeTablas;
+								EXECUTE @RC = [log].[sp_loguear_procesamiento] 
+									@procedimiento = 'sp_CalcularKPI_PostVta', 
+									@operacion = 'Inicio', 
+									@cantReg = '',
+									@mensaje = '- - -recopila [sp_CalcularKPI_PostVta] - - -';
+-----------------------------------------------------
+--FIN  LOGG
+-----------------------------------------------------nn
+-----------------------------------------------------
+--Tabla de resultados
+-----------------------------------------------------
+							IF OBJECT_ID('tableros.dwd.KPI_PostVta', 'U') IS NOT NULL
+								DROP TABLE tableros.dwd.KPI_PostVta;
+							create TABLE dwd.KPI_PostVta (
+								id INT IDENTITY(1,1) PRIMARY KEY,     -- Identificador único, autoincremental
+
+
+								fechaFactura DATETIME NULL,
+								fcNumero varchar(100),
+								mesaño nvarchar(7), 	
+								FechaRecibo DATETIME  ,   
+								FormaDePago varchar(100),
+								CobranzaNro varchar(100),
+								CashID int,
+								Repuesto varchar(100),
+								sucursalNombre nvarchar(100),
+								importe  float ,
+								referencia nvarchar (100) , --campo de notas manuales 
+								descripcionOperativa  varchar(100),							
+								indicadorKPI nvarchar(100) ,
+								KPIValue float,
+								ClienteNombre nvarchar(100),
+								cantidad int,
+																Familia nvarchar(100),
+																TipoVta nvarchar(100),
+																MontoTotalRepuestos float,
+        MontoTotalServiciosPropios float,
+        MontoTotalServiciosTerceros float,
+        SucursalOrden varchar(100),
+        FechaApertura datetime,
+        FechaCierre datetime,
+        indicador nvarchar(50),
+		cargo varchar(50)
+
+
+
+							);
+	
+	
+	   	  						
+
+----KPI_PostVta_A_FormaDePago
+---------------------
+---------------------
+
+ --SELECT * FROM dwd.KPI_PostVta WHERE indicadorKPI = 'ComA&I'
+	
+				INSERT INTO dwd.KPI_PostVta (-- Fechas
+				 fechaFactura, -- usamos FechaContable como fecha de factura
+				 mesaño, sucursalNombre, -- Info de sucursal / referencia / origen
+				 --sucursalNombre,
+				 importe, referencia, formadepago, descripcionOperativa, fcNumero, -- KPI
+				 indicadorKPI, KPIValue -- usamos el total como valor del KPI
+				)
+				SELECT C.FechaContable AS fechaFactura,
+					   CONCAT(YEAR(C.FechaContable), '-', RIGHT(CONCAT('0', MONTH(C.FechaContable)), 2)) AS mesaño,
+					   COALESCE(SDV.Nombre, 'ERROR SUCURSAL') AS sucursalNombre, -- <== ACÁ LA MAGIA
+				  CASE
+					  WHEN C.Documento = 'NC' THEN C.Total * -1
+					  ELSE C.Total
+				  END AS importe,
+				  C.Referencia,
+				  C.CondicionVenta AS formadepago,
+				  U.Descripcion AS descripcionOperativa,
+				  C.Control AS fcNumero,
+				  'ComA&I' AS indicadorKPI,
+				  CASE
+					  WHEN C.Documento = 'NC' THEN C.Total * -1
+					  ELSE C.Total
+				  END AS KPIValue
+				FROM sta.Comprobantes C
+				LEFT OUTER JOIN sta.Movim m ON C.Asiento = M.MovNRO
+				LEFT OUTER JOIN sta.UsuariosAccesos U ON U.usuariosAccesoID = M.MovUsuarioID
+				LEFT OUTER JOIN sta.CentrosDeCostos CC ON CC.CentroID = C.CentroDeCosto
+				LEFT OUTER JOIN sta.SucursalesContables SC ON C.Sucursal = SC.Numero
+				LEFT JOIN sta.SucursalesDeventa SDV ON SDV.SucursalContableRepuestos = SC.Numero
+				WHERE C.Origen = 'VTREP';
+
+
+
+	-----------------------------------------------------
+
+
+	--KPI_PostVta_B-41 EX A2--------------------------------------------------- ACont-LeadTime-fechafacturaRepuestosVsSaldocero
+
+--COMPLETA V1
+select * from dwd.KPI_PostVta where indicadorKPI = 'ACont-LeadTime-fechafacturaRepuestosVsSaldocero'
+
+									IF OBJECT_ID('tempdb..#DetCashResumen') IS NOT NULL
+										DROP TABLE #DetCashResumen;
+									
+									-------------------
+
+									;WITH Grupos AS (
+										SELECT
+											CashID,
+											CobranzaNro,
+											MIN(CASE WHEN Origen = 'VTREP' THEN Fecha END) AS FechaFactura,
+											MAX(CASE WHEN Origen = 'RC'    THEN Fecha END) AS FechaRecibo,
+											SUM(Importe) AS ImporteTotal,
+											SUM(CASE WHEN Origen = 'VTREP' THEN 1 ELSE 0 END) AS CantFacturas,
+											SUM(CASE WHEN Origen = 'RC'    THEN 1 ELSE 0 END) AS CantRecibos
+										FROM sta.DetCash
+										WHERE Origen IN ('VTREP','RC')
+										GROUP BY CobranzaNro, CashID
+										HAVING
+											SUM(CASE WHEN Origen = 'VTREP' THEN 1 ELSE 0 END) >= 1
+											AND SUM(CASE WHEN Origen = 'RC' THEN 1 ELSE 0 END) >= 1
+											AND ABS(SUM(Importe)) < 1
+									)
+									SELECT
+										dc.*,
+										g.FechaFactura,
+										g.FechaRecibo,
+										DATEDIFF(DAY, g.FechaFactura, g.FechaRecibo) AS DiasEntreFacturaYUltimoRecibo,
+										g.ImporteTotal
+									INTO #DetCashResumen
+									FROM sta.DetCash dc
+									JOIN Grupos g
+										  ON dc.CashID      = g.CashID
+										 AND dc.CobranzaNro = g.CobranzaNro
+									WHERE dc.Origen IN ('VTREP','RC');
+
+									-------------------
+
+									IF OBJECT_ID('tempdb..#DetCashResumenAgrupado') IS NOT NULL
+										DROP TABLE #DetCashResumenAgrupado;
+
+										-------------------
+									SELECT
+     
+										dcr.CobranzaNro,
+										dcr.Referencia,
+										MIN(dcr.FechaFactura)                    AS FechaFactura,
+										MAX(dcr.FechaRecibo)                     AS FechaRecibo,
+										MIN(dcr.DiasEntreFacturaYUltimoRecibo)   AS DiasEntreFacturaYUltimoRecibo,
+										SUM(dcr.Importe)                         AS ImporteTotalGrupo
+									INTO #DetCashResumenAgrupado
+									FROM #DetCashResumen dcr
+									WHERE dcr.CobranzaNro <> ''
+									 -- AND dcr.Referencia LIKE 'TR0000000001'
+									GROUP BY
+										dcr.CobranzaNro,
+										dcr.Referencia;
+
+										select * from #DetCashResumenAgrupado
+									-------------------
+								
+
+
+
+					-------------------------------------------
+	INSERT INTO dwd.KPI_PostVta 
+	(
+		fechaFactura,                
+		FechaRecibo,
+		mesaño,
+		sucursalNombre,
+		--IDFabrica,
+		--patente,
+		--ClienteNombre,
+		--Modelo,
+		--importe,
+		cobranzaNro,
+		referencia,   -- campo de notas manuales 
+		--origen,       -- sale de o.Nombre como marca
+		--descripcionOperativa,
+		--color,
+		--unidadTipo,
+		--Ubicacion,
+		--fcNumero,
+		cashid,
+		indicadorKPI,
+		KPIValue      -- cálculo del lead time
+		
+	)
+
+
+
+		select 
+		dca.FechaFactura,
+		dca.FechaRecibo,
+	    CONCAT(YEAR(dca.FechaRecibo ), '-', RIGHT(CONCAT('0', MONTH(dca.FechaRecibo )), 2)) AS mesaño,  -- <== aquí la lógica
+	   SCSV.sucursalVentaNombre
+	,		dca.CobranzaNro
+		,dca.Referencia
+		,cashID
+		,'ACont-LeadTime-fechafacturaRepuestosVsSaldocero'
+		,dca.DiasEntreFacturaYUltimoRecibo
+
+		from #DetCashResumenAgrupado dca 
+									left join sta.DetCash dc on dca.Referencia = dc.Referencia and dca.CobranzaNro = dc.CobranzaNro
+									left join sta.Recibos Rec on  Rec.[control] = dc.[Control]
+									left join dwd.SucContableSucVenta SCSV on rec.Sucursal =SCSV.SucContableNro
+									where dc.Comprobante like 'RC%' 
+									--and  dca.referencia = 'TR0000000001'
+
+									--and dc.Comprobante like 'RC%'
+					--				and ( select 
+					--sdv.Nombre 
+					--from sta.sucursalesdeventa sdv
+					
+					--where rec.Sucursal = sdv.numero
+		
+					--) is not null
+
+
+
+--select * from dwd.KPI_PostVta  where indicadorKPI = 'ACont-LeadTime-fechafacturaRepuestosVsSaldocero'
+--and referencia = 'TR0000000001'
+
+--select * from sta.sucursalesdeventa
+
+
+
+-------------------------------------------------------
+
+--KPI_PostVenta_C-VtaXTipoFamiliaProducto =  Venta por tipo producto: Porcentaje venta por familia de producto: Repuesto / Accesorio / Indumentaria / Etc
+	select * from dwd.KPI_PostVta where indicadorKPI = 'VtaXTipoFamiliaProducto'
+
+	INSERT INTO dwd.KPI_PostVta (fechaFactura , fcnumero, mesaño, Repuesto, sucursalNombre, importe , ClienteNombre, descripcionOperativa , cantidad, familia, indicadorKPI)
+	SELECT KTR.Fecha ,
+		   KTR.Documento --FC NUMERO
+	  ,
+		   CONCAT(YEAR(KTR.Fecha), '-', RIGHT(CONCAT('0', MONTH(KTR.Fecha)), 2)) AS mesaño ,
+		   KTR.Repuesto,
+		   SDV.Nombre SucursalNombre ,
+		   KTR.Precio ,
+		   CLI.Nombre ,
+		   REPLACE(REPLACE(REP.Descripcion, CHAR(13), ''), CHAR(10), '') AS Descripcion ,
+		   KTR.Cantidad ,
+		   rep.Familia ,
+		   'VtaXTipoFamiliaProducto'
+	FROM sta.KardexTR KTR
+	LEFT OUTER JOIN sta.SucursalesDeventa SDV ON KTR.Sucursal = SDV.Numero
+	LEFT OUTER JOIN sta.Clientes CLI ON KTR.Referencia = CLI.Codigo
+	LEFT OUTER JOIN sta.Repuestos REP ON KTR.Repuesto = REP.Codigo
+	AND KTR.GestionID = REP.GestionID
+	WHERE (SUBSTRING(KTR.Documento, 1, 2) = 'FC')
+	  AND KTR.Tipo = 'E'
+
+
+
+	  -----------------------------------------
+	  --KPI_PostVenta_D_VtaFIsicaVSVtaOnline
+--	select * from dwd.kpi_postvta where indicadorKPI = 'KPI_PostVenta_D_VtaFIsicaVSVtaOnline'
+	INSERT INTO dwd.KPI_PostVta (fechaFactura , fcnumero, mesaño, --Repuesto, 
+	sucursalNombre, 
+	importe , ClienteNombre, 
+	--descripcionOperativa ,
+	--cantidad,
+	--familia, 
+
+	indicadorKPI,
+	TipoVta)
+
+
+
+
+	  SELECT 
+	  fecha,
+	  [control],
+	  		   CONCAT(YEAR(Fecha), '-', RIGHT(CONCAT('0', MONTH(Fecha)), 2)) AS mesaño ,
+			   sucursal,
+			   total,
+			   nombre,
+			   'KPI_PostVenta_D_VtaFIsicaVSVtaOnline',
+
+    --C.*,
+    CASE 
+        WHEN C.CondicionVenta IN ('MERCADO LIBRE', 'TIENDA ON LINE', 'SALE')
+            THEN 'ONLINE'
+        WHEN C.CondicionVenta IN (
+                'TARJETA', 'TARJETA 3 CUOTAS', 'TARJETA 6 CUOTAS',
+                'TARJETA 9 CUOTAS', 'TARJETA 12 CUOTAS',
+                'CONTADO', 'CUENTA CORRIENTE', 'EFECTIVO'
+             )
+            THEN 'FISICA'
+        ELSE 'OTRO'
+    END AS KPIValue
+FROM sta.Comprobantes C
+WHERE C.Origen = 'VTREP';
+
+
+---------------------------------------------
+--KPI_PostVenta_E_LeadTImeOrdenesCerradasXCargo
+
+select  * from dwd.KPI_PostVta where indicadorKPI = '5'
+INSERT INTO dwd.KPI_PostVta (
+    FechaApertura,
+    FechaCierre,
+    sucursalNombre,
+    SucursalOrden,
+    Cargo,
+    KPIValue,
+	indicadorKPI
+)
+SELECT
+    SO.Apertura                   AS FechaApertura,
+    SO.Cierre                     AS FechaCierre,
+    SDV.Nombre                    AS sucursalNombre,
+    CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+    CAR.TipodeCargo               AS Cargo,
+    DATEDIFF(DAY, SO.Apertura, SO.Cierre) AS KPIValue
+	,'LeadTImeOrdenesCerradasXCargo' as indicadorKPI
+	     
+FROM sta.ServiciosOrdenes SO
+
+LEFT JOIN sta.ServiciosOrdenesDetalle SOD
+       ON SO.SucursalContable = SOD.SucursalContable
+      AND SO.NumeroOrden      = SOD.NumeroOrden
+--LEFT JOIN sta.ServiciosOrdenesDetalleDeServicios SODS       ON SOD.ServiciosOrdenesDetalleId = SODS.IdServicio
+LEFT JOIN sta.Cargos CAR
+       ON SO.Cargo = CAR.Codigo
+LEFT JOIN sta.SucursalesDeVenta SDV
+       ON SO.SucursalContable = SDV.Numero where so.cargo = '' or so.cargo is null
+	   		 	  	  
+	  end
