@@ -1,0 +1,301 @@
+USE [Tableros]
+GO
+/****** Object:  StoredProcedure [sta].[sp_Ingestar_sta]    Script Date: 21/11/2025 12:13:09 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+ALTER  PROCEDURE [sta].[sp_Ingestar_sta]
+--with encryption
+AS
+BEGIN
+
+
+
+
+--==========================
+--DROPEO TABLAS 
+--==========================
+
+DECLARE @sql NVARCHAR(MAX) = N'';
+SELECT @sql += 'DROP TABLE ' + QUOTENAME(TABLE_SCHEMA) + '.' + QUOTENAME(TABLE_NAME) + '; '
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA = 'sta' AND TABLE_TYPE = 'BASE TABLE';
+
+EXEC sp_executesql @sql;
+
+
+
+
+    SET NOCOUNT ON;
+--INICIA SP
+
+--INICIO LOGG
+DECLARE @RC int
+DECLARE @procedimiento nvarchar(100)
+DECLARE @operacion nvarchar(50)
+DECLARE @cantReg int
+DECLARE @mensaje nvarchar(max)
+DECLARE @CantidadDeTablas INT;
+-- TODO: 
+--SELECT @CantidadDeTablas = COUNT(*)
+--FROM INFORMATION_SCHEMA.TABLES
+--WHERE TABLE_SCHEMA = 'STA';
+-- variable @CantidadDeTablas 
+SELECT @CantidadDeTablas AS CantidadDeTablas;
+EXECUTE @RC = [log].[sp_loguear_procesamiento] 
+    @procedimiento = 'sp_20_Ingestar_sta', 
+    @operacion = 'Inicio - OK', 
+    @cantReg = '',
+    @mensaje = '- - - - Iniciando Ingesta - - - - ';
+--LOGG 
+
+SELECT * INTO [Tableros].[sta].[Recibos]
+FROM [sai].[dbo].[Recibos];
+
+SELECT * INTO [Tableros].[sta].[CreditosTipo]
+FROM [sai].[dbo].[CreditosTipo];
+
+-- Copiar datos de Colores
+SELECT * INTO [Tableros].[sta].[Colores]
+FROM [sai].[dbo].[Colores];
+
+-- Copiar datos de Condominios
+SELECT * INTO [Tableros].[sta].[Condominios]
+FROM [sai].[dbo].[Condominios];
+
+-- Copiar datos de ConsultaStockFisico
+SELECT * INTO [Tableros].[sta].[ConsultaStockFisico]
+FROM [sai].[dbo].[ConsultaStockFisico];
+
+-- Copiar datos de ConsultaUsadosStkFisico
+SELECT * INTO [Tableros].[sta].[ConsultaUsadosStkFisico]
+FROM [sai].[dbo].[ConsultaUsadosStkFisico];
+
+-- Copiar datos de ConsultaUsadosStock
+SELECT * INTO [Tableros].[sta].[ConsultaUsadosStock]
+FROM [sai].[dbo].[ConsultaUsadosStock];
+
+-- Copiar datos de ConveniosIVA2459
+SELECT * INTO [Tableros].[sta].[ConveniosIVA2459]
+FROM [sai].[dbo].[ConveniosIVA2459];
+
+-- Copiar datos de Origenes
+SELECT * INTO [Tableros].[sta].[Origenes]
+FROM [sai].[dbo].[Origenes];
+
+-- Copiar datos de Preventas
+SELECT * INTO [Tableros].[sta].[Preventas]
+FROM [sai].[dbo].[Preventas];
+
+-- Copiar datos de Preventas_SAICAJA
+SELECT * INTO [Tableros].[sta].[Preventas_SAI_CAJA]
+FROM [SAI_CAJA].[dbo].[Preventas];
+
+-- Copiar datos de SaldoPorPreventaSinMotivo
+SELECT * INTO [Tableros].[sta].[SaldoPorPreventaSinMotivo]
+FROM [sai].[dbo].[SaldoPorPreventaSinMotivo];
+
+-- Copiar datos de SaldosPorReferencia
+SELECT * INTO [Tableros].[sta].[SaldosPorReferencia]
+FROM [sai].[dbo].[SaldosPorReferencia];
+
+-- Copiar datos de Familias
+SELECT * INTO [Tableros].[sta].[Familias]
+FROM [sai].[dbo].[Familias];
+
+-- Copiar datos de SucursalesContables
+SELECT * INTO [Tableros].[sta].[SucursalesContables]
+FROM [sai].[dbo].[SucursalesContables];
+
+-- Copiar datos de TasasIVA
+SELECT * INTO [Tableros].[sta].[TasasIVA]
+FROM [sai].[dbo].[TasasIVA];
+
+-- Copiar datos de TipoVenta
+SELECT * INTO [Tableros].[sta].[TipoVenta]
+FROM [sai].[dbo].[TipoVenta];
+
+-- Copiar datos de Ubicaciones
+SELECT * INTO [Tableros].[sta].[Ubicaciones]
+FROM [sai].[dbo].[Ubicaciones];
+
+-- Copiar datos de Unidades
+SELECT * INTO [Tableros].[sta].[Unidades]
+FROM [sai].[dbo].[Unidades];
+
+-- Copiar datos de Usados
+SELECT * INTO [Tableros].[sta].[Usados]
+FROM [sai].[dbo].[Usados];
+
+-- Copiar datos de UsuariosAccesos
+SELECT * INTO [Tableros].[sta].[UsuariosAccesos]
+FROM [sai].[dbo].[UsuariosAccesos];
+
+
+SELECT * INTO [Tableros].[sta].[CentrosDeCostos]
+FROM [sai].[dbo].[CentrosDeCostos];
+
+SELECT * INTO [Tableros].[sta].[ServiciosOrdenes]
+FROM [sai].[dbo].[ServiciosOrdenes];
+
+--drop table sta.[Comprobantes]
+SELECT * INTO [Tableros].[sta].[Comprobantes]
+FROM [sai].[dbo].[Comprobantes];
+
+-- Copiar datos de GastoXPrevta
+SELECT * INTO [Tableros].[sta].[GastoXPrevta]
+ FROM [sai].[dbo].[GastoXPrevta];
+
+-- Copiar datos de Conceptos
+SELECT * INTO [Tableros].[sta].[Conceptos]
+FROM [sai].[dbo].[Conceptos];
+
+-- Copiar datos de Clientes
+SELECT * INTO [Tableros].[sta].[Clientes]
+FROM [sai].[dbo].[Clientes];
+
+
+
+-- Copiar datos de Clientes
+SELECT * INTO [Tableros].[sta].[Clientes_sai_caja]
+FROM [SAI_CAJA].[dbo].[Clientes];
+
+
+
+-- Copiar datos de SucursalesDeventa
+SELECT * INTO [Tableros].[sta].[SucursalesDeventa]
+FROM [sai].[dbo].[SucursalesDeventa];
+
+-- Copiar datos de Modelos
+SELECT * INTO [Tableros].[sta].[Modelos]
+FROM [sai].[dbo].[Modelos];
+
+-- Copiar datos de Vendedores
+SELECT * INTO [Tableros].[sta].[Vendedores]
+FROM [sai].[dbo].[Vendedores];
+
+
+
+SELECT * INTO [Tableros].[sta].[KardexTR]
+FROM [sai].[dbo].[KardexTR];
+
+SELECT * INTO [Tableros].[sta].[Repuestos]
+FROM [sai].[dbo].[Repuestos];
+
+SELECT * INTO [Tableros].[sta].[ServiciosTurnos]
+FROM [sai].[dbo].[ServiciosTurnos];
+
+SELECT * INTO [Tableros].[sta].[Recepcionistas]
+FROM [sai].[dbo].[Recepcionistas];
+
+
+SELECT * INTO [Tableros].[sta].[ServiciosAutos]
+FROM [sai].[dbo].[ServiciosAutos];
+
+
+
+SELECT * INTO [Tableros].[sta].[DetCash]
+FROM [sai].[dbo].[DetCash];
+
+
+
+SELECT * INTO [Tableros].[sta].[DetCash_sai_caja]
+FROM [sai_caja].[dbo].[DetCash];
+
+
+
+SELECT * INTO [Tableros].[sta].[Movim]
+FROM [sai].[dbo].[Movim];
+
+
+SELECT * INTO [Tableros].[sta].[Entidades]
+FROM [sai].[dbo].[Entidades];
+
+
+
+SELECT * INTO [Tableros].[sta].[DetMov]
+FROM [sai].[dbo].[DetMov];
+
+
+SELECT * INTO [Tableros].[sta].[ServiciosOrdenesDetalle]
+FROM [sai].[dbo].[ServiciosOrdenesDetalle];
+
+
+SELECT * INTO [Tableros].[sta].[Cargos]
+FROM [sai].[dbo].[Cargos];
+
+
+SELECT * INTO [Tableros].[sta].[Servicios]
+FROM [sai].[dbo].[Servicios];
+
+
+SELECT * INTO [Tableros].[sta].[ServiciosOrdenesDetalleDeServicios]
+FROM [sai].[dbo].[ServiciosOrdenesDetalleDeServicios];
+
+
+SELECT * INTO [Tableros].[sta].ServiciosOrdenesDetalleFacturacion
+FROM [sai].[dbo].ServiciosOrdenesDetalleFacturacion;
+
+SELECT * INTO [Tableros].[sta].BuscoAuto
+FROM [sai].[dbo].BuscoAuto;
+
+
+SELECT * INTO [Tableros].[sta].TiposVehiculos
+FROM [sai].[dbo].TiposVehiculos
+
+SELECT * INTO [Tableros].[sta].[familias_SAI_CAJA]
+FROM SAI_CAJA.DBO.familias
+
+SELECT * INTO [Tableros].[sta].[Vendedores_SAI_CAJA]
+FROM SAI_CAJA.DBO.Vendedores
+
+SELECT * INTO [Tableros].[sta].[Modelos_SAI_CAJA]
+FROM SAI_CAJA.DBO.Modelos
+
+SELECT * INTO [Tableros].[sta].[Servicios_SAI_CAJA]
+FROM SAI_CAJA.DBO.servicios
+
+SELECT * INTO [Tableros].[sta].[Colores_SAI_CAJA]
+FROM SAI_CAJA.DBO.Colores
+
+SELECT * INTO [Tableros].[sta].[Unidades_SAI_CAJA]
+FROM SAI_CAJA.DBO.unidades
+
+SELECT * INTO [Tableros].[sta].[Usados_SAI_CAJA]
+FROM SAI_CAJA.DBO.usados
+
+
+SELECT * INTO [Tableros].[sta].[TiposVehiculos_SAI_CAJA]
+FROM SAI_CAJA.DBO.TiposVehiculos
+
+
+SELECT * INTO [Tableros].[sta].[GastosPorPreventa_SAI_CAJA]
+FROM SAI_CAJA.DBO.GastosPorPreventa
+
+SELECT * INTO [Tableros].[sta].[SucursalesDeVenta_SAI_CAJA]
+FROM SAI_CAJA.DBO.SucursalesDeVenta
+
+--FIN SP
+
+
+
+--LOGG 
+-- TODO: 
+SELECT @CantidadDeTablas = COUNT(*)
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA = 'STA';
+-- variable @CantidadDeTablas 
+SELECT @CantidadDeTablas AS CantidadDeTablas;
+EXECUTE @RC = [log].[sp_loguear_procesamiento] 
+    @procedimiento = 'sp_20_Ingestar_sta', 
+    @operacion = 'FIN - OK ', 
+    @cantReg = @CantidadDeTablas,
+    @mensaje = '- - - - Se Cargaron las Tablas - - - -';
+--FIN LOGG 
+
+
+END
