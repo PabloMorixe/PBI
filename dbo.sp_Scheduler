@@ -1,6 +1,41 @@
 USE [Tableros];
 GO
 
+
+--Drop table scheduler 
+----1- Crear la TABLA con los datos de ejecucion para el orquestador
+
+--CREATE TABLE dbo.Scheduler (
+--    ID INT IDENTITY(1,1) PRIMARY KEY,
+--    Pais VARCHAR(30) NOT NULL,
+--    Orden INT ,
+--    SP_Nombre VARCHAR(100) NULL,
+----    Query_Ejecucion VARCHAR(MAX) NULL, -- Puede ser NVARCHAR si usas caracteres especiales
+--    Habilitado BIT DEFAULT 1,
+--    Frecuencia_de_ejecucion_Mins int ,
+--    Ultima_Ejecucion DATETIME2 NULL,
+    
+--    INDEX IX_Metadatos_Pais_Orden (Pais, Orden)
+--);
+
+
+---- Insertamos los SPs en el orden lógico propuesto
+--INSERT INTO Scheduler (Pais,orden,  SP_Nombre, Habilitado, Frecuencia_de_ejecucion_Mins)
+--VALUES 
+
+--('Argentina',0, '[dwd].[sp_run_proceso]', 1, 60), 
+--('Argentina',0,  '[dwd].[sp_StoreManagerHist]', 1, 1440),
+--('Argentina',0,  '[dwd].[sp_JefeDeTallerHist]', 1, 1440),
+--('Argentina',0,  '[dwd].[sp_CalcularKPI]', 1, 1440),
+--('Argentina',0,  '[dwd].[sp_CalcularKPI_PostVta]', 1, 1440),
+--('Mexico',1, '[dwdMX].[sp_ConvertXlsxToCsv]', 1, 1440), 
+--('Mexico',2,  '[dwdMX].[sp_Generar_Stock]', 1, 1440),
+--('Mexico',3,  '[dwdMX].[sp_cargar_Cobranzas]', 1, 1440),
+--('Mexico',4,  '[dwdMX].[sp_cargar_ventas]', 1, 1440),
+--('Mexico',5,  '[dwdMX].[sp_CalcularDeuda]', 1, 1440),
+--('Mexico',6,  '[dwdMX].[sp_LeadtimeCobranzas]', 1, 1440);
+
+
 IF OBJECT_ID('dbo.sp_Scheduler', 'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_Scheduler;
 GO
