@@ -1,0 +1,1182 @@
+USE [Tableros]
+GO
+
+/****** Object:  StoredProcedure [dwd].[sp_JefeDeTallerHist]    Script Date: 24/11/2025 13:21:19 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+create PROCEDURE [dwd].[sp_JefeDeTallerHist]
+--WITH ENCRYPTION -- Agrega encriptación
+--04/03/2025: agregue A1(PM), 
+--07/03/2025: se agregaron todos los indicadores
+--05 ABRIL 2025 -- se modifica el select del A1 y se crea el [sp_JefeDeTallerHist] desafectando el viejo nombre
+--09 abril 2025, eze: 
+		--A3 ->CAMBIAR SUCURSAL ORDEN POR SUCURSAL NOMBRE (ESTAN INVERTIDOS)
+		--B1-->CAMBIAR SUCURSAL CONTABLE POR SUCURSAL DE VTA Y AGREGAR SUCURSAL-ORDEN
+		--B2-->AGREGAR SUCURSAL DE VENTA (SUCURSALNOMBRE)
+		--B3-->AGREGAR SUCURSAL DE VENTA (SUCURSALNOMBRE)
+		--C1-->AGREGAR SUCURSAL DE VENTA (SUCURSALNOMBRE)
+		--C2-->AGREGAR SUCURSAL DE VENTA (SUCURSALNOMBRE)
+		--D1-->AGREGAR SUCURSAL DE VENTA (SUCURSALNOMBRE)
+		--D2-->AGREGAR SUCURSAL DE VENTA (SUCURSALNOMBRE)
+
+
+AS
+
+BEGIN
+
+	EXEC dbo.GenerarCalendario;
+
+
+-----------------------------------------------------
+--INICIO LOGG
+-----------------------------------------------------
+DECLARE @RC int
+DECLARE @procedimiento nvarchar(100)
+DECLARE @operacion nvarchar(50)
+DECLARE @cantReg int
+DECLARE @mensaje nvarchar(max)
+DECLARE @CantidadDeTablas INT;
+SELECT @CantidadDeTablas AS CantidadDeTablas;
+EXECUTE @RC = [log].[sp_loguear_procesamiento] 
+    @procedimiento = 'sp_StoreManager_JefeTallerHist', 
+    @operacion = 'Inicio', 
+    @cantReg = '',
+    @mensaje = '- - -procesa [[sp_StoreManager_JefeTallerHist]] - - -';
+-----------------------------------------------------
+--FIN  LOGG
+-----------------------------------------------------
+
+-----------------------------------------------------
+--Tabla de resultados
+-----------------------------------------------------
+
+--IF OBJECT_ID('tableros.dwd.sp_StoreManager_JefeTallerHist', 'U') IS NOT NULL
+    DROP TABLE tableros.dwd.StoreManager_JefeTallerHist;
+
+CREATE TABLE tableros.dwd.StoreManager_JefeTallerHist (
+    id INT IDENTITY(1,1) PRIMARY KEY,          -- Identificador único, autoincremental
+    fecha DATETIME,                   -- Fecha (puede ser Apertura o Cierre)
+    anio AS YEAR(fecha),                       -- Año (columna calculada)
+    mes AS RIGHT(CONCAT('0', MONTH(fecha)), 2), -- Mes con dos cifras (columna calculada)
+    mesaño AS CONCAT(YEAR(fecha), '-', RIGHT(CONCAT('0', MONTH(fecha)), 2)), -- Año y mes concatenados (columna calculada)
+    sucursalNombre NVARCHAR(100),              -- Nombre de la sucursal (SDV.Nombre)
+--	sucursalNumero int,  
+    PVNumero NVARCHAR(50),                     -- Número de orden o sucursal (SO.NumeroOrden o SO.SucursalContable)
+    importe FLOAT,                             -- Monto total (IMPORTE en las consultas)
+    referencia NVARCHAR(100),                  -- Referencia (C.Referencia)
+    origen NVARCHAR(50),                       -- Origen (SO.TablaAutomotor o SER.OrigenServicio)
+    descripcionOperativa NVARCHAR(100),        -- Descripción operativa (C.Descripcion o CAR.TipodeCargo)
+    indicador NVARCHAR(100),                   -- Indicador (puede ser un valor fijo o calculado)
+    FechaApertura DATETIME,                    -- Fecha de apertura (SO.Apertura)
+    FechaCierre DATETIME,                      -- Fecha de cierre (SO.Cierre)
+    NumeroSucursal INT,                        -- Número de sucursal (SO.SucursalContable)
+    IDVehiculo NVARCHAR(100),                  -- ID del vehículo (SO.Automotor)
+    OrigenVehiculo NVARCHAR(100),              -- Origen del vehículo (SO.TablaAutomotor)
+    Cargo NVARCHAR(100),                       -- Descripción del cargo (C.Descripcion)
+    SucursalOrden NVARCHAR(100),               -- Sucursal y orden concatenados (CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden))
+    MontoTotalRepuestos FLOAT,                 -- Monto total de repuestos (SUM para repuestos)
+    MontoTotalServiciosPropios FLOAT,          -- Monto total de servicios propios (SUM para servicios propios)
+    MontoTotalServiciosTerceros FLOAT,         -- Monto total de servicios terceros (SUM para servicios terceros)
+    TipodeCargo NVARCHAR(100),                  -- Tipo de cargo (CAR.TipodeCargo)
+	patente varchar(8),
+    TipoVenta varchar (30),
+	ClienteNombre nvarchar(100),
+	Modelo nvarchar(100),
+	Vendedor nvarchar(100)
+		,color varchar(50)
+		,   IDfabrica NVARCHAR(100)
+	,	VIN varchar(17)
+	,[Control] [varchar](30) 
+
+
+);
+--LLAVE - Key 
+IF GETDATE() > '2027-03-01'
+BEGIN
+    PRINT 'RENOVAR KEY'
+    DROP TABLE tableros.dwd.sp_StoreManager_JefeTallerHist;
+END
+-----------------------------------------------------
+--Proceso
+-----------------------------------------------------
+--SECCION ACTIVACIONES 0KM --------------------------------------------------------------------------------------------------------------------------
+--A1--------------------------------------------------- ACTIVACIONES 0KM-a Activar Q - Cargo Activacion y estado
+
+INSERT INTO tableros.dwd.StoreManager_JefeTallerHist (
+    fecha,                   
+    sucursalNombre,    
+--	SucursalOrden,
+--   PVNumero,                
+    importe,                 
+  ----  referencia,              
+  --  origen,                  
+  --  descripcionOperativa,    
+    indicador,               
+  --  FechaApertura,           
+  --  FechaCierre,             
+  --  NumeroSucursal,          
+    IDVehiculo,              
+  --  OrigenVehiculo,          
+  --  Cargo,                   
+  --  SucursalOrden,           
+  --  MontoTotalRepuestos,     
+  --  MontoTotalServiciosPropios,
+  --  MontoTotalServiciosTerceros,
+  --  TipodeCargo       
+  	patente,
+    TipoVenta ,
+	ClienteNombre, 
+	Modelo ,
+	Vendedor, 
+	color,
+	IDFabrica,
+	vin
+)
+--0KM A ACTIVAR Q - CARGO ACTIVACIÓN Y ESTADO  
+--05 ABRIL 2025
+SELECT
+  u.FacturaFecha,
+    SDV.Nombre AS sucursalNombre,
+    PV.PrecioVenta,
+   'ACTIVACIONES 0KM-0KM A ACTIVAR Q - CARGO ACTIVACIÓN Y ESTADO',
+  U.UnidadID,
+   
+  U.Patente,
+  TV.Descripcion AS TipoVenta,
+  CLI.Nombre AS ClienteNombre,
+  MODL.Modelo,
+  VEND.Nombre AS Vendedor,
+    COL.Descripcion AS Color,
+	  U.IDFabrica,
+	    U.VIN
+
+  
+  
+ -- PV.PrecioVenta,
+  --CASE  
+  --  WHEN View_GXP.TotalGasto IS NULL THEN 0 
+  --  ELSE View_GXP.TotalGasto
+  --END AS TotalGastosPV,
+  --CASE  
+  --  WHEN View_GXP.TotalGasto IS NULL THEN PV.PrecioVenta 
+  --  ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
+  --END AS TotalPV,
+  --PV.CotizacionDolar,
+  --FAM.Nombre AS Familia,
+  --PV.PrecioSugerido
+
+
+
+FROM sta.Preventas PV
+LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+LEFT OUTER JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+LEFT OUTER JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+LEFT OUTER JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
+LEFT OUTER JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
+LEFT OUTER JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+LEFT OUTER JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+LEFT OUTER JOIN sta.Unidades U ON U.Preventa = PV.Numero
+LEFT OUTER JOIN sta.Comprobantes C ON U.Factura = c.Control
+LEFT OUTER JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+WHERE PV.TipoPV = 'O'
+  AND PV.Anulada = 0
+  AND u.FacturaFecha IS NOT NULL
+  AND u.Confirmada = 1
+  AND u.Factura LIKE 'VTOKM-FC%'
+  AND u.FechaSalida IS NULL
+  AND u.FechaDeRecepcion IS NOT NULL
+  AND U.UnidadID NOT IN (
+    SELECT SO.Automotor
+    FROM sta.ServiciosOrdenes SO 
+    LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SO.SucursalContable = SDV.Numero 
+    LEFT OUTER JOIN sta.Cargos C ON SO.Cargo = C.Codigo
+    WHERE C.IdCargos IN (1032, 1035, 1009, 1025, 1027, 1017, 4, 1036, 1022, 1029, 1005)
+      AND SO.TablaAutomotor = 'Unidades'
+  )
+
+
+--SE COMENTA EL  05 ABRIL 2025
+--SELECT
+--u.FacturaFecha,
+--SDV.Nombre AS sucursalNombre,
+
+-- PV.PrecioVenta,
+-- 'ACTIVACIONES 0KM-0KM A ACTIVAR Q - CARGO ACTIVACIÓN Y ESTADO',
+-- --CASE  
+-- --WHEN View_GXP.TotalGasto is null then 0 
+-- --ELSE View_GXP.TotalGasto
+-- --END AS TotalGastosPV,
+-- --CASE  
+-- --WHEN View_GXP.TotalGasto is null then PV.PrecioVenta 
+-- --ELSE (View_GXP.TotalGasto+PV.PrecioVenta)
+-- --END AS TotalPV,
+-- --PV.CotizacionDolar,
+-- --FAM.Nombre AS Familia,
+--  U.Patente, 
+--  TV.Descripcion AS TipoVenta,
+--   CLI.Nombre AS ClienteNombre, 	
+--   MODL.Modelo,
+-- --PV.PrecioSugerido
+-- VEND.Nombre AS Vendedor,
+--  COL.Descripcion AS Color,
+--   U.IDFabrica,
+--     U.VIN
+
+ 
+-- FROM sta.Preventas PV
+
+--LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SDV.Numero=PV.Sucursal
+--LEFT OUTER JOIN sta.Clientes CLI ON CLI.Codigo=PV.Cliente
+--LEFT OUTER JOIN sta.Modelos MODL ON MODL.Modelo=PV.Modelo
+--LEFT OUTER JOIN sta.Familias FAM ON FAM.FamiliaID=MODL.Familia
+--LEFT OUTER JOIN sta.Vendedores VEND ON VEND.VendedorId=PV.VendedorID
+--LEFT OUTER JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID=PV.PrevtaID
+--LEFT OUTER JOIN sta.Colores COL ON COL.ColorID=PV.ColorID
+--LEFT OUTER JOIN sta.Unidades U ON U.Preventa=PV.Numero
+--LEFT OUTER JOIN sta.Comprobantes C ON U.Factura=c.Control
+--LEFT OUTER JOIN sta.TipoVenta TV ON PV.TipoDeVentaID=TV.TipoVentaID
+--WHERE PV.TipoPV='O' 
+--AND PV.Anulada=0 
+--AND u.FacturaFecha is not null 
+--and u.Confirmada=1 
+--and u.Factura Like ('VTOKM-FC%') 
+--and u.FechaSalida IS NULL and u.FechaDeRecepcion is not null
+
+--A2--------------------------------------------------- ACTIVACIONES 0KM-Activaciones en proceso
+INSERT INTO dwd.StoreManager_JefeTallerHist (
+    fecha,                   -- Fecha de apertura (SO.Apertura)
+	NumeroSucursal,
+	SucursalOrden,
+    sucursalNombre,          -- Nombre de la sucursal (SDV.Nombre)
+
+	    IDVehiculo,              -- ID del vehículo (SO.Automotor)
+    OrigenVehiculo,          -- Origen del vehículo (SO.TablaAutomotor)
+    Cargo,                   -- Descripción del cargo (C.Descripcion)
+    indicador                -- Indicador para identificar el tipo de registro
+    --PVNumero,                -- Número de sucursal (SO.SucursalContable)
+    --FechaApertura,           -- Fecha de apertura (SO.Apertura)
+    --FechaCierre,             -- Fecha de cierre (SO.Cierre, será NULL en este caso)
+    --NumeroSucursal,          -- Número de sucursal (SO.SucursalContable)
+
+)
+ SELECT 
+   --YEAR(SO.Apertura) AS ANIO,
+   --MONTH(SO.Apertura) AS MES,
+   --CONCAT(YEAR(SO.Apertura), '-', RIGHT(CONCAT('0', MONTH(SO.Apertura)), 2)) AS mesaño,
+   SO.Apertura AS FechaApertura,
+   --SO.Cierre AS FechaCierre,
+   SO.SucursalContable AS NumeroSucursal,
+   CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+   SDV.Nombre AS NombreSucursal,
+   SO.Automotor AS IDVehiculo, 
+   SO.TablaAutomotor AS OrigenVehiculo,
+   C.Descripcion AS Cargo,
+   'ACTIVACIONES 0KM-Activaciones en proceso'
+
+FROM sta.ServiciosOrdenes SO 
+LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SO.SucursalContable = SDV.Numero 
+LEFT OUTER JOIN sta.Cargos C ON SO.Cargo = C.Codigo
+WHERE 
+    C.IdCargos IN (1032,1035,1009,1025,1027,1017,4,1036,1022,1029,1005)
+    AND SO.TablaAutomotor = 'Unidades'
+        AND SO.Cierre IS NULL;
+
+--A3--------------------------------------------------- ACTIVACIONES 0KM-Orden de Activación Abierta
+INSERT INTO dwd.StoreManager_JefeTallerHist (
+    fecha,     
+	FechaCierre,-- Fecha de apertura (SO.Apertura)
+	NumeroSucursal,
+SucursalOrden,    
+sucursalNombre,          -- Nombre de la sucursal (SDV.Nombre)
+		
+
+    --PVNumero,                -- Número de sucursal (SO.SucursalContable)
+    --FechaApertura,           -- Fecha de apertura (SO.Apertura)
+    --FechaCierre,             -- Fecha de cierre (SO.Cierre)
+    --NumeroSucursal,          -- Número de sucursal (SO.SucursalContable)
+    IDVehiculo,              -- ID del vehículo (SO.Automotor)
+    OrigenVehiculo,          -- Origen del vehículo (SO.TablaAutomotor)
+    Cargo,                   -- Descripción del cargo (C.Descripcion)
+    indicador                -- Indicador para identificar el tipo de registro
+)
+--OrdenesActivacionAbiertas (FechaApertura se usa en el filtro de fecha ANIOMES)
+
+SELECT 
+
+    SO.Apertura AS FechaApertura,
+    SO.Cierre AS FechaCierre,
+	    SO.SucursalContable AS NumeroSucursal,
+	CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+SDV.Nombre AS NombreSucursal,
+ 
+    SO.Automotor AS IDVehiculo,
+    SO.TablaAutomotor AS OrigenVehiculo,
+    C.Descripcion AS Cargo,
+	'ACTIVACIONES 0KM-Orden de Activación Abierta'
+FROM sta.ServiciosOrdenes SO 
+LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SO.SucursalContable = SDV.Numero 
+LEFT OUTER JOIN sta.Cargos C ON SO.Cargo = C.Codigo
+WHERE 
+   C.IdCargos IN (1032,1035,1009,1025,1027,1017,4,1036,1022,1029,1005)
+    AND SO.TablaAutomotor = 'Unidades'
+
+--A4--------------------------------------------------- ACTIVACIONES 0KM-Orden de Activación Cerrada
+INSERT INTO dwd.StoreManager_JefeTallerHist (
+    fecha,                   
+  --  PVNumero,                
+    FechaApertura,           
+    FechaCierre,        
+    NumeroSucursal,       
+	SucursalOrden,
+	sucursalNombre,          
+    IDVehiculo,              
+    OrigenVehiculo,          
+    Cargo,                   
+    indicador                
+
+)
+
+ SELECT 
+    SO.Cierre ,
+    SO.Apertura AS FechaApertura,
+	    SO.Cierre ,
+    SO.SucursalContable AS NumeroSucursal,
+	   CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+
+    SDV.Nombre AS NombreSucursal,
+    SO.Automotor AS IDVehiculo,
+    SO.TablaAutomotor AS OrigenVehiculo,
+    C.Descripcion AS Cargo,
+	'ACTIVACIONES 0KM-Orden de Activación Cerrada'
+FROM sta.ServiciosOrdenes SO 
+LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SO.SucursalContable = SDV.Numero 
+LEFT OUTER JOIN sta.Cargos C ON SO.Cargo = C.Codigo
+WHERE 
+    C.IdCargos IN (1032,1035,1009,1025,1027,1017,4,1036,1022,1029,1005)
+    AND SO.TablaAutomotor = 'Unidades'
+    AND SO.Cierre IS NOT NULL;
+
+--TALLER CARGO CLIENTE -------------------------------------------------------------------------------------------------------------------------
+--B1--------------------------------------------------- TALLER CARGO CLIENTE-Ordenes Cerradas Facturadas Cargo Cliente Q y $
+INSERT INTO dwd.StoreManager_JefeTallerHist (
+    fecha,
+	SucursalOrden,                  
+    sucursalNombre,   
+	referencia,
+   -- PVNumero,                
+    importe,                 
+ --   referencia,              
+  --  descripcionOperativa,    
+    indicador
+	                
+)
+--Ordenes Cerradas Facturadas Cargo Cliente Q y $ :
+SELECT
+    C.FechaContable, --fecha
+     VSUC.NumeroOrden, --sucucursal-Orden
+	CASE 
+    WHEN C.FacturaDeCredito = 0 THEN SDV.nombre 
+    ELSE SDVFCE.Nombre
+    END AS sucursalNombre, --sucursalNombre
+	C.Control, --Referencia
+    CASE 
+    WHEN C.Documento = 'NC' THEN C.Total * -1
+    ELSE C.Total
+    END AS IMPORTE, --importe
+    'TALLER CARGO CLIENTE-Ordenes Cerradas Facturadas Cargo Cliente Q y $' as indicador
+  
+
+FROM SAI.dbo.Comprobantes C
+LEFT OUTER JOIN SAI.dbo.Movim m
+    ON C.Asiento = M.MovNRO
+LEFT OUTER JOIN SAI.dbo.UsuariosAccesos U
+    ON U.usuariosAccesoID = M.MovUsuarioID
+LEFT OUTER JOIN SAI.dbo.SucursalesContables SC ON C.Sucursal=SC.Numero
+LEFT OUTER JOIN SAI.dbo.SucursalesDeventa SDV ON C.Sucursal=SDV.SucursalContableServicios
+LEFT OUTER JOIN SAI.dbo.SucursalesDeventa SDVFCE ON C.Sucursal=SDVFCE.SucursalContableServiciosFCE
+LEFT OUTER JOIN
+(SELECT        STA.ServiciosOrdenesDetalleFacturacion.NumeroOrden, MAX(STA.Comprobantes.ComprobanteID) AS [ID Comprobante], STA.Comprobantes.Origen, 
+                         STA.ServiciosOrdenesDetalleFacturacion.SucursalContable
+FROM            STA.Comprobantes INNER JOIN
+                         STA.ServiciosOrdenesDetalleFacturacion ON STA.Comprobantes.ComprobanteID = STA.ServiciosOrdenesDetalleFacturacion.ComprobanteId
+WHERE        (STA.Comprobantes.Origen = 'VTSER')
+GROUP BY STA.Comprobantes.Origen, STA.ServiciosOrdenesDetalleFacturacion.NumeroOrden, STA.ServiciosOrdenesDetalleFacturacion.SucursalContable) AS VSUC ON C.ComprobanteID=VSUC.[ID Comprobante]
+
+WHERE     C.Origen = 'VTSER'
+--B2--------------------------------------------------- TALLER CARGO CLIENTE-Ordenes sin cerrar Q y $
+
+IF OBJECT_ID('tempdb..#Temp') IS NOT NULL
+    DROP TABLE #Temp;
+
+-- Primero, insertamos los datos en la tabla temporal
+WITH BaseDatos AS (
+    -- Servicios Propios
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+        'Servicios Propios' AS Tipo,
+        CAR.TipodeCargo,
+        SUM(SODS.TiempoaFacturar * SODS.VentaUnitario) AS Monto
+    FROM sta.ServiciosOrdenes AS SO
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD 
+        ON SO.SucursalContable = SOD.SucursalContable AND SO.NumeroOrden = SOD.NumeroOrden
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalleDeServicios AS SODS 
+        ON SOD.ServiciosOrdenesDetalleId = SODS.IdServicio
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON SODS.Cargo = CAR.Codigo
+    LEFT OUTER JOIN sta.Servicios AS SER 
+        ON SODS.Servicio = SER.Codigo
+    WHERE (SER.OrigenServicio = 'P')
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, SO.NumeroOrden, CAR.TipodeCargo
+
+    UNION ALL
+
+    -- Servicios Terceros
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+        'Servicios Terceros' AS Tipo,
+        CAR.TipodeCargo,
+        SUM(SOD.Venta) AS Monto
+    FROM sta.ServiciosOrdenes AS SO
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD 
+        ON SO.SucursalContable = SOD.SucursalContable AND SO.NumeroOrden = SOD.NumeroOrden
+    LEFT OUTER JOIN sta.Servicios AS SER 
+        ON SOD.Codigo = SER.Codigo
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON SOD.Cargo = CAR.Codigo
+    WHERE (SER.OrigenServicio = 'T')
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, SO.NumeroOrden, CAR.TipodeCargo
+
+    UNION ALL
+
+    -- Repuestos
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', KTR.Orden) AS SucursalOrden,
+        'Repuestos' AS Tipo,
+        CAR.TipodeCargo,
+        SUM((CASE WHEN LEFT(KTR.Documento, 2) = 'VA' THEN KTR.Cantidad ELSE (-1) * KTR.Cantidad END) * KTR.Precio * KTR.Cotizacion) AS Monto
+    FROM sta.KardexTR AS KTR
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON KTR.Cargo = CAR.Codigo
+    LEFT OUTER JOIN sta.ServiciosOrdenes AS SO 
+        ON KTR.Orden = SO.NumeroOrden AND KTR.Sucursal = SO.SucursalContable
+    WHERE (KTR.Orden <> 0)
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, KTR.Orden, CAR.TipodeCargo
+)
+SELECT
+    CONCAT(YEAR(BD.Apertura), '-', RIGHT(CONCAT('0', month(BD.Apertura)), 2)) AS mesaño,
+    BD.SucursalContable as sucursalNumero,
+    SDV.Nombre as sucursalNombre, 
+    BD.SucursalOrden,
+    BD.Apertura,
+    BD.Cierre,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Repuestos' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalRepuestos,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Servicios Propios' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalServiciosPropios,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Servicios Terceros' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalServiciosTerceros,
+    BD.TipodeCargo
+INTO #Temp  -- Aquí creamos e insertamos en la tabla temporal
+FROM BaseDatos BD
+LEFT OUTER JOIN sta.SucursalesDeventa SDV ON BD.SucursalContable=SDV.Numero
+WHERE BD.TipodeCargo = 'Cliente' and BD.Cierre IS NULL
+GROUP BY BD.SucursalOrden, BD.Apertura, BD.Cierre, BD.TipodeCargo, BD.SucursalContable, SDV.Nombre
+ORDER BY BD.SucursalOrden;
+
+-- Ahora sí podemos insertar desde #Temp
+INSERT INTO dwd.StoreManager_JefeTallerHist (
+    fecha,      
+    NumeroSucursal,          
+    sucursalNombre,          
+    SucursalOrden,
+    FechaApertura,           
+    FechaCierre,             
+    MontoTotalRepuestos,
+    MontoTotalServiciosPropios,
+    MontoTotalServiciosTerceros,
+    importe, 
+    indicador                
+) 
+SELECT 
+    Apertura,
+    sucursalNumero,
+    sucursalNombre,
+    SucursalOrden,
+    Apertura,
+    Cierre,
+    MontoTotalRepuestos,
+    MontoTotalServiciosPropios,
+    MontoTotalServiciosTerceros,
+    (ISNULL(MontoTotalRepuestos, 0) + ISNULL(MontoTotalServiciosPropios, 0) + ISNULL(MontoTotalServiciosTerceros, 0)),
+    'TALLER CARGO CLIENTE-Ordenes sin cerrar Q y $'
+FROM #Temp;
+
+-- Limpieza final
+IF OBJECT_ID('tempdb..#Temp') IS NOT NULL
+    DROP TABLE #Temp;
+
+
+--B3--------------------------------------------------- TALLER CARGO CLIENTE-Ordenes Cerradas Sin Facturar $ y Q
+--TALLER CARGO GARANTIA -------------------------------------------------------------------------------------------------------------------------------
+IF OBJECT_ID('tempdb..#Temp2') IS NOT NULL
+    DROP TABLE #Temp2;
+--OrdenesSinCerrarQy$
+--Ordenes Cerradas sin Facturar $ y Q
+WITH BaseDatos2 AS (
+    -- Servicios Propios
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+        'Servicios Propios' AS Tipo,
+        CAR.TipodeCargo,
+        SUM(SODS.TiempoaFacturar * SODS.VentaUnitario) AS Monto
+    FROM sta.ServiciosOrdenes AS SO
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD 
+        ON SO.SucursalContable = SOD.SucursalContable AND SO.NumeroOrden = SOD.NumeroOrden
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalleDeServicios AS SODS 
+        ON SOD.ServiciosOrdenesDetalleId = SODS.IdServicio
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON SODS.Cargo = CAR.Codigo
+    LEFT OUTER JOIN sta.Servicios AS SER 
+        ON SODS.Servicio = SER.Codigo
+    WHERE (SER.OrigenServicio = 'P')
+    AND NOT EXISTS (
+        SELECT 1
+        FROM sta.Comprobantes C
+        INNER JOIN sta.ServiciosOrdenesDetalleFacturacion SODF 
+            ON C.ComprobanteID = SODF.ComprobanteId
+        WHERE C.Origen = 'VTSER' 
+        AND C.Documento <> 'NC'
+        AND SODF.NumeroOrden = SO.NumeroOrden
+        AND SODF.SucursalContable = SO.SucursalContable
+    )
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, SO.NumeroOrden, CAR.TipodeCargo
+
+    UNION ALL
+
+    -- Servicios Terceros
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+        'Servicios Terceros' AS Tipo,
+        CAR.TipodeCargo,
+        SUM(SOD.Venta) AS Monto
+    FROM sta.ServiciosOrdenes AS SO
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD 
+        ON SO.SucursalContable = SOD.SucursalContable AND SO.NumeroOrden = SOD.NumeroOrden
+    LEFT OUTER JOIN sta.Servicios AS SER 
+        ON SOD.Codigo = SER.Codigo
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON SOD.Cargo = CAR.Codigo
+    WHERE (SER.OrigenServicio = 'T')
+    AND NOT EXISTS (
+        SELECT 1
+        FROM sta.Comprobantes C
+        INNER JOIN sta.ServiciosOrdenesDetalleFacturacion SODF 
+            ON C.ComprobanteID = SODF.ComprobanteId
+        WHERE C.Origen = 'VTSER' 
+        AND C.Documento <> 'NC'
+        AND SODF.NumeroOrden = SO.NumeroOrden
+        AND SODF.SucursalContable = SO.SucursalContable
+    )
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, SO.NumeroOrden, CAR.TipodeCargo
+
+    UNION ALL
+
+    -- Repuestos
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', KTR.Orden) AS SucursalOrden,
+        'Repuestos' AS Tipo,
+        CAR.TipodeCargo,
+        SUM((CASE WHEN LEFT(KTR.Documento, 2) = 'VA' THEN KTR.Cantidad ELSE (-1) * KTR.Cantidad END) * KTR.Precio * KTR.Cotizacion) AS Monto
+    FROM sta.KardexTR                    AS KTR
+    LEFT OUTER JOIN sta.Cargos           AS CAR ON KTR.Cargo = CAR.Codigo
+    LEFT OUTER JOIN sta.ServiciosOrdenes AS SO ON KTR.Orden = SO.NumeroOrden AND KTR.Sucursal = SO.SucursalContable
+    WHERE (KTR.Orden <> 0)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM sta.Comprobantes C
+        INNER JOIN sta.ServiciosOrdenesDetalleFacturacion SODF 
+            ON C.ComprobanteID = SODF.ComprobanteId
+        WHERE C.Origen = 'VTSER' 
+        AND C.Documento <> 'NC'
+        AND SODF.NumeroOrden = KTR.Orden
+        AND SODF.SucursalContable = KTR.Sucursal
+    )
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, KTR.Orden, CAR.TipodeCargo
+)
+
+-- Consulta Final: Monto total por tipo de servicio
+SELECT 
+     CONCAT(YEAR(BD.Cierre), '-', RIGHT(CONCAT('0', month(BD.Cierre)), 2)) AS mesaño,
+         BD.SucursalContable as sucursalNumero,
+         SDV.Nombre as sucursalNombre,
+     BD.SucursalOrden,
+     BD.Apertura,
+    BD.Cierre,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Repuestos' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalRepuestos,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Servicios Propios' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalServiciosPropios,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Servicios Terceros' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalServiciosTerceros
+	INTO #Temp2
+
+FROM BaseDatos2 BD
+LEFT OUTER JOIN sta.SucursalesDeventa SDV ON BD.SucursalContable=SDV.Numero
+WHERE BD.TipodeCargo = 'Cliente' and BD.Cierre IS NOT NULL
+GROUP BY BD.SucursalOrden, BD.Apertura, BD.Cierre,BD.TipodeCargo, BD.SucursalContable,SDV.Nombre
+ORDER BY BD.SucursalOrden;
+
+
+
+select * from #temp2
+
+
+INSERT INTO dwd.StoreManager_JefeTallerHist (
+    fecha,      
+	SucursalOrden,
+    sucursalNombre,          
+    --PVNumero,                
+    FechaApertura,           
+    FechaCierre,             
+    --NumeroSucursal,          
+    --IDVehiculo,              
+    --OrigenVehiculo,          
+    --Cargo,                   
+	MontoTotalRepuestos,
+	MontoTotalServiciosPropios,
+	MontoTotalServiciosTerceros,
+	importe, 
+    indicador                
+) 
+select 
+apertura,
+SucursalOrden,
+sucursalNombre,
+Apertura,	
+Cierre,
+MontoTotalRepuestos,
+	MontoTotalServiciosPropios,
+	MontoTotalServiciosTerceros,
+	    (ISNULL(MontoTotalRepuestos, 0) + ISNULL(MontoTotalServiciosPropios, 0) + ISNULL(MontoTotalServiciosTerceros, 0)) ,
+
+    'TALLER CARGO CLIENTE-Ordenes Cerradas Sin Facturar $ y Q'                
+from #temp2
+--C1--------------------------------------------------- TALLER CARGO GARANTIA-Ordenes Cerradas Sin Facturar $ y Q
+
+IF OBJECT_ID('tempdb..#Temp3') IS NOT NULL
+    DROP TABLE #Temp3;
+--OrdenesGarantíaCerradasQy$
+WITH BaseDatos AS (
+    -- Servicios Propios
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+        'Servicios Propios' AS Tipo,
+        CAR.TipodeCargo,
+        SUM(SODS.TiempoaFacturar * SODS.VentaUnitario) AS Monto
+    FROM sta.ServiciosOrdenes AS SO
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD 
+        ON SO.SucursalContable = SOD.SucursalContable AND SO.NumeroOrden = SOD.NumeroOrden
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalleDeServicios AS SODS 
+        ON SOD.ServiciosOrdenesDetalleId = SODS.IdServicio
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON SODS.Cargo = CAR.Codigo
+    LEFT OUTER JOIN sta.Servicios AS SER 
+        ON SODS.Servicio = SER.Codigo
+    WHERE (SER.OrigenServicio = 'P')
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, SO.NumeroOrden, CAR.TipodeCargo
+
+    UNION ALL
+
+    -- Servicios Terceros
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+        'Servicios Terceros' AS Tipo,
+        CAR.TipodeCargo,
+        SUM(SOD.Venta) AS Monto
+    FROM sta.ServiciosOrdenes AS SO
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD 
+        ON SO.SucursalContable = SOD.SucursalContable AND SO.NumeroOrden = SOD.NumeroOrden
+    LEFT OUTER JOIN sta.Servicios AS SER 
+        ON SOD.Codigo = SER.Codigo
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON SOD.Cargo = CAR.Codigo
+    WHERE (SER.OrigenServicio = 'T')
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, SO.NumeroOrden, CAR.TipodeCargo
+
+    UNION ALL
+
+    -- Repuestos
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', KTR.Orden) AS SucursalOrden,
+        'Repuestos' AS Tipo,
+        CAR.TipodeCargo,
+        SUM((CASE WHEN LEFT(KTR.Documento, 2) = 'VA' THEN KTR.Cantidad ELSE (-1) * KTR.Cantidad END) * KTR.Precio * KTR.Cotizacion) AS Monto
+    FROM sta.KardexTR AS KTR
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON KTR.Cargo = CAR.Codigo
+    LEFT OUTER JOIN sta.ServiciosOrdenes AS SO 
+        ON KTR.Orden = SO.NumeroOrden AND KTR.Sucursal = SO.SucursalContable
+    WHERE (KTR.Orden <> 0)
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, KTR.Orden, CAR.TipodeCargo
+)
+
+-- Consulta Final: Monto total por tipo de servicio
+SELECT
+    CONCAT(YEAR(BD.Cierre), '-', RIGHT(CONCAT('0', month(BD.Cierre)), 2)) AS mesaño, 
+    BD.SucursalContable as sucursalNumero,
+        SDV.Nombre as sucursalNombre,
+        BD.SucursalOrden,
+    BD.Apertura,
+    BD.Cierre,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Repuestos' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalRepuestos,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Servicios Propios' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalServiciosPropios,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Servicios Terceros' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalServiciosTerceros,
+    BD.TipodeCargo
+	INTO #Temp3
+
+FROM BaseDatos BD
+LEFT OUTER JOIN sta.SucursalesDeventa SDV ON BD.SucursalContable=SDV.Numero
+
+WHERE BD.TipodeCargo = 'Garantia' and BD.Cierre IS NOT NULL
+GROUP BY BD.SucursalOrden, BD.Apertura, BD.Cierre,BD.TipodeCargo,BD.SucursalContable,SDV.Nombre
+ORDER BY BD.SucursalOrden;
+
+select * from #temp3
+
+
+INSERT INTO dwd.StoreManager_JefeTallerHist (
+    fecha,      
+	SucursalOrden,
+    sucursalNombre,          
+    --PVNumero,                
+    FechaApertura,           
+    FechaCierre,             
+    --NumeroSucursal,          
+    --IDVehiculo,              
+    --OrigenVehiculo,          
+    --Cargo,                   
+	MontoTotalRepuestos,
+	MontoTotalServiciosPropios,
+	MontoTotalServiciosTerceros,
+	importe,
+    indicador                
+) 
+select 
+apertura,
+SucursalOrden,
+sucursalNombre,
+Apertura,
+Cierre,
+MontoTotalRepuestos,
+	MontoTotalServiciosPropios,
+	MontoTotalServiciosTerceros,
+	    (ISNULL(MontoTotalRepuestos, 0) + ISNULL(MontoTotalServiciosPropios, 0) + ISNULL(MontoTotalServiciosTerceros, 0)) ,
+
+    'TALLER CARGO GARANTIA-Ordenes Cerradas Sin Facturar $ y Q'                
+from #temp3
+
+
+--C2--------------------------------------------------- TALLER CARGO GARANTIA-Ordenes Garantia Abiertas $ y Q
+
+IF OBJECT_ID('tempdb..#Temp4') IS NOT NULL
+    DROP TABLE #Temp4;
+
+--OrdenesGarantíaAbiertasQy$
+WITH BaseDatos AS (
+    -- Servicios Propios
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+        'Servicios Propios' AS Tipo,
+        CAR.TipodeCargo,
+        SUM(SODS.TiempoaFacturar * SODS.VentaUnitario) AS Monto
+    FROM sta.ServiciosOrdenes AS SO
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD 
+        ON SO.SucursalContable = SOD.SucursalContable AND SO.NumeroOrden = SOD.NumeroOrden
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalleDeServicios AS SODS 
+        ON SOD.ServiciosOrdenesDetalleId = SODS.IdServicio
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON SODS.Cargo = CAR.Codigo
+    LEFT OUTER JOIN sta.Servicios AS SER 
+        ON SODS.Servicio = SER.Codigo
+    WHERE (SER.OrigenServicio = 'P')
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, SO.NumeroOrden, CAR.TipodeCargo
+
+    UNION ALL
+
+    -- Servicios Terceros
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+        'Servicios Terceros' AS Tipo,
+        CAR.TipodeCargo,
+        SUM(SOD.Venta) AS Monto
+    FROM sta.ServiciosOrdenes AS SO
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD 
+        ON SO.SucursalContable = SOD.SucursalContable AND SO.NumeroOrden = SOD.NumeroOrden
+    LEFT OUTER JOIN sta.Servicios AS SER 
+        ON SOD.Codigo = SER.Codigo
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON SOD.Cargo = CAR.Codigo
+    WHERE (SER.OrigenServicio = 'T')
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, SO.NumeroOrden, CAR.TipodeCargo
+
+    UNION ALL
+
+    -- Repuestos
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', KTR.Orden) AS SucursalOrden,
+        'Repuestos' AS Tipo,
+        CAR.TipodeCargo,
+        SUM((CASE WHEN LEFT(KTR.Documento, 2) = 'VA' THEN KTR.Cantidad ELSE (-1) * KTR.Cantidad END) * KTR.Precio * KTR.Cotizacion) AS Monto
+    FROM sta.KardexTR AS KTR
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON KTR.Cargo = CAR.Codigo
+    LEFT OUTER JOIN sta.ServiciosOrdenes AS SO 
+        ON KTR.Orden = SO.NumeroOrden AND KTR.Sucursal = SO.SucursalContable
+    WHERE (KTR.Orden <> 0)
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, KTR.Orden, CAR.TipodeCargo
+)
+
+-- Consulta Final: Monto total por tipo de servicio
+SELECT
+    CONCAT(YEAR(BD.Apertura), '-', RIGHT(CONCAT('0', month(BD.Apertura)), 2)) AS mesaño,
+        BD.SucursalContable as sucursalNumero,
+        SDV.Nombre as sucursalNombre, 
+    BD.SucursalOrden,
+    BD.Apertura,
+    BD.Cierre,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Repuestos' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalRepuestos,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Servicios Propios' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalServiciosPropios,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Servicios Terceros' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalServiciosTerceros,
+        BD.TipodeCargo
+		INTO #Temp4
+
+        FROM BaseDatos BD
+                LEFT OUTER JOIN sta.SucursalesDeventa SDV ON BD.SucursalContable=SDV.Numero
+WHERE BD.TipodeCargo = 'Garantia' and BD.Cierre IS NULL
+GROUP BY BD.SucursalOrden, BD.Apertura, BD.Cierre,BD.TipodeCargo,BD.SucursalContable,SDV.Nombre
+ORDER BY BD.SucursalOrden;
+
+select * from #temp4
+
+
+INSERT INTO dwd.StoreManager_JefeTallerHist (
+    fecha,      
+	SucursalOrden,
+    sucursalNombre,          
+    --PVNumero,                
+    FechaApertura,           
+    FechaCierre,             
+    --NumeroSucursal,          
+    --IDVehiculo,              
+    --OrigenVehiculo,          
+    --Cargo,                   
+	MontoTotalRepuestos,
+	MontoTotalServiciosPropios,
+	MontoTotalServiciosTerceros,
+	importe, 
+    indicador                
+) 
+select 
+apertura,
+SucursalOrden,
+sucursalNombre,
+Apertura,
+Cierre,
+MontoTotalRepuestos,
+	MontoTotalServiciosPropios,
+	MontoTotalServiciosTerceros,
+	    (ISNULL(MontoTotalRepuestos, 0) + ISNULL(MontoTotalServiciosPropios, 0) + ISNULL(MontoTotalServiciosTerceros, 0)) ,
+
+    'TALLER CARGO GARANTIA-Ordenes Garantia Abiertas $ y Q'                
+from #temp4
+
+
+--TALLER CARGO INTERNO Y GOOD WILL -------------------------------------------------------------------------------------------------------------------------------
+--D1---------------------------------------------------TALLER CARGO INTERNO Y GOOD WILL-OrdenesCI y GW Cerradas $ y Q
+
+IF OBJECT_ID('tempdb..#Temp5') IS NOT NULL
+    DROP TABLE #Temp5;
+
+
+--OrdenesCIyGWCerradasQy$
+WITH BaseDatos AS (
+    -- Servicios Propios
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+        'Servicios Propios' AS Tipo,
+        CAR.TipodeCargo,
+        SUM(SODS.TiempoaFacturar * SODS.VentaUnitario) AS Monto
+    FROM sta.ServiciosOrdenes AS SO
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD 
+        ON SO.SucursalContable = SOD.SucursalContable AND SO.NumeroOrden = SOD.NumeroOrden
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalleDeServicios AS SODS 
+        ON SOD.ServiciosOrdenesDetalleId = SODS.IdServicio
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON SODS.Cargo = CAR.Codigo
+    LEFT OUTER JOIN sta.Servicios AS SER 
+        ON SODS.Servicio = SER.Codigo
+    WHERE (SER.OrigenServicio = 'P')
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, SO.NumeroOrden, CAR.TipodeCargo
+
+    UNION ALL
+
+    -- Servicios Terceros
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+        'Servicios Terceros' AS Tipo,
+        CAR.TipodeCargo,
+        SUM(SOD.Venta) AS Monto
+    FROM sta.ServiciosOrdenes AS SO
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD 
+        ON SO.SucursalContable = SOD.SucursalContable AND SO.NumeroOrden = SOD.NumeroOrden
+    LEFT OUTER JOIN sta.Servicios AS SER 
+        ON SOD.Codigo = SER.Codigo
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON SOD.Cargo = CAR.Codigo
+    WHERE (SER.OrigenServicio = 'T')
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, SO.NumeroOrden, CAR.TipodeCargo
+
+    UNION ALL
+
+    -- Repuestos
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', KTR.Orden) AS SucursalOrden,
+        'Repuestos' AS Tipo,
+        CAR.TipodeCargo,
+        SUM((CASE WHEN LEFT(KTR.Documento, 2) = 'VA' THEN KTR.Cantidad ELSE (-1) * KTR.Cantidad END) * KTR.Precio * KTR.Cotizacion) AS Monto
+    FROM sta.KardexTR AS KTR
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON KTR.Cargo = CAR.Codigo
+    LEFT OUTER JOIN sta.ServiciosOrdenes AS SO 
+        ON KTR.Orden = SO.NumeroOrden AND KTR.Sucursal = SO.SucursalContable
+    WHERE (KTR.Orden <> 0)
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, KTR.Orden, CAR.TipodeCargo
+)
+
+-- Consulta Final: Monto total por tipo de servicio
+SELECT
+    CONCAT(YEAR(BD.Cierre), '-', RIGHT(CONCAT('0', month(BD.Cierre)), 2)) AS mesaño,
+        BD.SucursalContable as sucursalNumero,
+        SDV.Nombre as sucursalNombre, 
+    BD.SucursalOrden,
+    BD.Apertura,
+    BD.Cierre,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Repuestos' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalRepuestos,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Servicios Propios' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalServiciosPropios,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Servicios Terceros' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalServiciosTerceros,
+        BD.TipodeCargo
+		INTO #Temp5
+
+        FROM BaseDatos BD
+                LEFT OUTER JOIN sta.SucursalesDeventa SDV ON BD.SucursalContable=SDV.Numero
+WHERE BD.TipodeCargo = 'Interno' and BD.Cierre IS NOT NULL
+GROUP BY BD.SucursalOrden, BD.Apertura, BD.Cierre,BD.TipodeCargo,BD.SucursalContable,SDV.Nombre
+ORDER BY BD.SucursalOrden;
+
+select * from #temp5
+
+
+INSERT INTO dwd.StoreManager_JefeTallerHist (
+    fecha,      
+	SucursalOrden,
+    sucursalNombre,          
+    --PVNumero,                
+    FechaApertura,           
+    FechaCierre,             
+    --NumeroSucursal,          
+    --IDVehiculo,              
+    --OrigenVehiculo,          
+    --Cargo,                   
+	MontoTotalRepuestos,
+	MontoTotalServiciosPropios,
+	MontoTotalServiciosTerceros,
+    Importe,
+	indicador                
+) 
+select 
+apertura,
+SucursalOrden,
+sucursalNombre,
+Apertura,
+Cierre,
+MontoTotalRepuestos,
+	MontoTotalServiciosPropios,
+	MontoTotalServiciosTerceros,
+	    (ISNULL(MontoTotalRepuestos, 0) + ISNULL(MontoTotalServiciosPropios, 0) + ISNULL(MontoTotalServiciosTerceros, 0)) ,
+
+    'TALLER CARGO INTERNO Y GOOD WILL-Ordenes CI y GW Cerradas $ y Q'           
+from #temp5
+
+--D2---------------------------------------------------TALLER CARGO INTERNO Y GOOD WILL-OrdenesCI y GW Abiertas $ y Q
+
+IF OBJECT_ID('tempdb..#Temp6') IS NOT NULL
+    DROP TABLE #Temp6;
+
+--OrdenesCIyGWAbiertasQy$
+WITH BaseDatos AS (
+    -- Servicios Propios
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+        'Servicios Propios' AS Tipo,
+        CAR.TipodeCargo,
+        SUM(SODS.TiempoaFacturar * SODS.VentaUnitario) AS Monto
+    FROM sta.ServiciosOrdenes AS SO
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD 
+        ON SO.SucursalContable = SOD.SucursalContable AND SO.NumeroOrden = SOD.NumeroOrden
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalleDeServicios AS SODS 
+        ON SOD.ServiciosOrdenesDetalleId = SODS.IdServicio
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON SODS.Cargo = CAR.Codigo
+    LEFT OUTER JOIN sta.Servicios AS SER 
+        ON SODS.Servicio = SER.Codigo
+    WHERE (SER.OrigenServicio = 'P')
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, SO.NumeroOrden, CAR.TipodeCargo
+
+    UNION ALL
+
+    -- Servicios Terceros
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+        'Servicios Terceros' AS Tipo,
+        CAR.TipodeCargo,
+        SUM(SOD.Venta) AS Monto
+    FROM sta.ServiciosOrdenes AS SO
+    LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD 
+        ON SO.SucursalContable = SOD.SucursalContable AND SO.NumeroOrden = SOD.NumeroOrden
+    LEFT OUTER JOIN sta.Servicios AS SER 
+        ON SOD.Codigo = SER.Codigo
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON SOD.Cargo = CAR.Codigo
+    WHERE (SER.OrigenServicio = 'T')
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, SO.NumeroOrden, CAR.TipodeCargo
+
+    UNION ALL
+
+    -- Repuestos
+    SELECT
+        SO.SucursalContable,
+        SO.Apertura,
+        SO.Cierre,
+        CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', KTR.Orden) AS SucursalOrden,
+        'Repuestos' AS Tipo,
+        CAR.TipodeCargo,
+        SUM((CASE WHEN LEFT(KTR.Documento, 2) = 'VA' THEN KTR.Cantidad ELSE (-1) * KTR.Cantidad END) * KTR.Precio * KTR.Cotizacion) AS Monto
+    FROM sta.KardexTR AS KTR
+    LEFT OUTER JOIN sta.Cargos AS CAR 
+        ON KTR.Cargo = CAR.Codigo
+    LEFT OUTER JOIN sta.ServiciosOrdenes AS SO 
+        ON KTR.Orden = SO.NumeroOrden AND KTR.Sucursal = SO.SucursalContable
+    WHERE (KTR.Orden <> 0)
+    GROUP BY SO.SucursalContable, SO.Apertura, SO.Cierre, KTR.Orden, CAR.TipodeCargo
+)
+
+-- Consulta Final: Monto total por tipo de servicio
+SELECT
+    CONCAT(YEAR(BD.Apertura), '-', RIGHT(CONCAT('0', month(BD.Apertura)), 2)) AS mesaño,
+        BD.SucursalContable as sucursalNumero,
+        SDV.Nombre as sucursalNombre, 
+    BD.SucursalOrden,
+    BD.Apertura,
+    BD.Cierre,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Repuestos' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalRepuestos,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Servicios Propios' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalServiciosPropios,
+    COALESCE(SUM(CASE WHEN BD.Tipo = 'Servicios Terceros' THEN BD.Monto ELSE 0 END), 0) AS MontoTotalServiciosTerceros,
+        BD.TipodeCargo
+		INTO #Temp6
+
+        FROM BaseDatos BD
+                LEFT OUTER JOIN sta.SucursalesDeventa SDV ON BD.SucursalContable=SDV.Numero
+WHERE BD.TipodeCargo = 'Interno'
+GROUP BY BD.SucursalOrden, BD.Apertura, BD.Cierre,BD.TipodeCargo,BD.SucursalContable,SDV.Nombre
+ORDER BY BD.SucursalOrden;
+
+select * from #temp6
+
+
+INSERT INTO dwd.StoreManager_JefeTallerHist (
+    fecha,      
+	SucursalOrden,
+    sucursalNombre,          
+    --PVNumero,                
+    FechaApertura,           
+    FechaCierre,             
+    --NumeroSucursal,          
+    --IDVehiculo,              
+    --OrigenVehiculo,          
+    --Cargo,                   
+	MontoTotalRepuestos,
+	MontoTotalServiciosPropios,
+	MontoTotalServiciosTerceros,
+    importe, 
+	indicador                
+) 
+select 
+apertura,
+SucursalOrden,
+sucursalNombre,
+Apertura,
+Cierre,
+MontoTotalRepuestos,
+	MontoTotalServiciosPropios,
+	MontoTotalServiciosTerceros,
+		    (ISNULL(MontoTotalRepuestos, 0) + ISNULL(MontoTotalServiciosPropios, 0) + ISNULL(MontoTotalServiciosTerceros, 0)) ,
+
+    'TALLER CARGO INTERNO Y GOOD WILL-Ordenes CI y GW Abiertas $ y Q'           
+from #temp6
+
+--select * from Tableros.dwd.sp_StoreManager_JefeTallerHist
+
+
+END;
+
+GO
+
