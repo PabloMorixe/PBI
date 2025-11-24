@@ -1,0 +1,142 @@
+USE [Tableros]
+GO
+
+/****** Object:  StoredProcedure [dwd].[sp_CargaTablasBackend]    Script Date: 24/11/2025 13:19:49 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+create PROCEDURE [dwd].[sp_CargaTablasBackend]
+--with encryption
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+
+
+----------------------------------------------------------------v
+----SucContableSucVenta
+----------------------------------------------------------------
+    -- Eliminar la tabla si existe
+    IF OBJECT_ID('dwd.SucContableSucVenta', 'U') IS NOT NULL
+        DROP TABLE dwd.SucContableSucVenta;
+
+    -- Crear la tabla desde cero
+ 
+CREATE TABLE [dwd].[SucContableSucVenta](
+	
+	
+	
+	[SucContableNro] [int] NOT NULL,
+	[SucContableNombre] [nvarchar](100) NULL,
+	[sucVentaNro] [int] NULL,
+	[sucursalVentaNombre] [nvarchar](100) NULL,
+	idPais int
+PRIMARY KEY CLUSTERED 
+(
+	[SucContableNro] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+
+
+INSERT INTO dwd.[SucContableSucVenta] ([SucContableNro], [SucContableNombre], [sucVentaNro], [sucursalVentaNombre], [idPais])
+VALUES 
+    (1, 'Sucursal Beiro', 3, 'AR MOTORAD', 1),
+    (50, 'LEMAMOTOR CONTABLE', 3, 'AR MOTORAD', 1),
+    (26, 'KTM Palermo', 9, 'KTM-CANAM PALERMO', 1),
+    (27, 'KTM Palermo PostVenta', 9, 'KTM-CANAM PALERMO', 1),
+    (29, 'KTM Palermo FCE 0KM', 9, 'KTM-CANAM PALERMO', 1),
+    (38, 'KTM Palermo Exportacion WEBSERVICE', 9, 'KTM-CANAM PALERMO', 1),
+    (39, 'KTM PAlermo Exportacion AFIP ONLINE', 9, 'KTM-CANAM PALERMO', 1),
+    (41, 'KTM Palermo Postventa FCE', 9, 'KTM-CANAM PALERMO', 1),
+    (53, 'MOTO MORINI 0KM', 14, 'MOTOMORINI LELOIR', 1),
+    (54, 'MOTO MORINI POSTVENTA', 14, 'MOTOMORINI LELOIR', 1),
+    (12, 'Motoplex 0Km San Isidro', 4, 'MOTOPLEX  SAN ISIDRO', 1),
+    (13, 'Motoplex Accesorios San Isidro', 4, 'MOTOPLEX  SAN ISIDRO', 1),
+    (17, 'Motoplex San Isidro FCE 0km', 4, 'MOTOPLEX  SAN ISIDRO', 1),
+    (51, 'MOTOPLEX LELOIR 0KM', 13, 'MOTOPLEX LELOIR', 1),
+    (18, 'Nuuv Palermo 0km', 5, 'NUUV PALERMO', 1),
+    (19, 'Nuuv Palermo Accesorios', 5, 'NUUV PALERMO', 1),
+    (6, 'Post Venta Beiro 3349', 2, 'POST VENTA DEVOTO', 1),
+    (5, 'Motoplex 0 KM DEVOTO', 2, 'POST VENTA DEVOTO', 1),
+    (15, 'Motoplex Devoto FCE 0Km', 2, 'POST VENTA DEVOTO', 1),
+    (23, 'Royal Enfield 0 KM DEVOTO', 2, 'POST VENTA DEVOTO', 1),
+    (42, 'Post Venta FCE Devoto', 2, 'POST VENTA DEVOTO', 1),
+    (43, 'QJ SI 0KM', 12, 'QJ SAN ISIDRO', 1),
+    (44, 'QJ SI POSTVENTA', 12, 'QJ SAN ISIDRO', 1),
+    (45, 'QJ SI FCE POSTVENTA', 12, 'QJ SAN ISIDRO', 1),
+    (46, 'QJ SI FCE 0KM', 12, 'QJ SAN ISIDRO', 1),
+    (34, 'Royal Enfield 0km Leloir', 11, 'ROYAL ENFIELD LELOIR', 1),
+    (35, 'Royal Enfield 0km FCE Leloir', 11, 'ROYAL ENFIELD LELOIR', 1),
+    (36, 'Royal Enfield Taller Leloir', 11, 'ROYAL ENFIELD LELOIR', 1),
+    (37, 'Royal Enfield FCE Taller Leloir', 11, 'ROYAL ENFIELD LELOIR', 1),
+    (52, 'Motoplex Leloir POSTVENTA', 11, 'ROYAL ENFIELD LELOIR', 1),
+    (8, 'Royal Enfield 0 Km VL', 8, 'ROYAL ENFIELD VTE. LOPEZ', 1),
+    (9, 'Royal Enfield 0 Km Facturación Web VL', 8, 'ROYAL ENFIELD VTE. LOPEZ', 1),
+    (10, 'Royal Enfield 0 Km Manual VL', 8, 'ROYAL ENFIELD VTE. LOPEZ', 1),
+    (11, 'Royal Enfield Postventa VL', 8, 'ROYAL ENFIELD VTE. LOPEZ', 1),
+    (14, 'Royal Enfield FCE 0km VL', 8, 'ROYAL ENFIELD VTE. LOPEZ', 1),
+    (28, 'Royal Enfield FCE Postventa', 8, 'ROYAL ENFIELD VTE. LOPEZ', 1);
+
+----------------------------------------------------------------v
+----TiposDeSaldo
+----------------------------------------------------------------
+	-- Eliminar la tabla si existe
+		IF OBJECT_ID('dwd.TiposDeSaldo', 'U') IS NOT NULL
+			DROP TABLE dwd.TiposDeSaldo;
+
+
+			-- Crear la tabla en el esquema dwd
+			CREATE TABLE tableros.dwd.TiposDeSaldo (
+				IDMotivo INT PRIMARY KEY,
+				Motivo NVARCHAR(50) NOT NULL,
+				DescripcionMotivo NVARCHAR(255) NOT NULL,
+				TipoDeSaldo NVARCHAR(50) NOT NULL
+			);
+
+			-- Insertar los datos
+			INSERT INTO tableros.dwd.TiposDeSaldo (IDMotivo, Motivo, DescripcionMotivo, TipoDeSaldo) VALUES
+			(43, 'SENA', 'Reserva', 'CONTADO'),
+			(45, '0KM', 'Saldo Contado', 'CONTADO'),
+			(42, 'GSO', 'Gastos de Gestoria', 'CONTADO'),
+			(44, 'US', 'Saldo Bs', 'CONTADO'),
+			(47, 'ACCE', 'Accesorios', 'CONTADO'),
+			(48, 'RESML', 'Reserva MercadoLibre', 'CONTADO'),
+			(49, 'SALCEFE$', 'Saldo contado efectivo $', 'CONTADO'),
+			(50, 'SALCEFEUSD', 'Saldo contado efectivo USD', 'CONTADO'),
+			(51, 'SALTRA$', 'Saldo transferencia $', 'CONTADO'),
+			(52, 'SALTRAUSD', 'Saldo Transferencia USD', 'CONTADO'),
+			(53, 'SALTUSADO', 'Saldo toma usados', 'CONTADO'),
+			(39, 'CHEQUE', 'Cheques Varios', 'CONTADO'),
+			(63, 'DOKM', 'Devolucion compra', 'CONTADO'),
+			(40, 'FINAN', 'Financiacion BBVA', 'FINANCIADO'),
+			(67, 'FINANS', 'Financiacion Santander', 'FINANCIADO'),
+			(41, 'FP', 'Financiacion Propia', 'FINANCIADO'),
+			(46, 'SDOTC', 'Tarjeta Credito Ahora 12', 'TARJETA'),
+			(68, 'SDOTCS', 'Tarjeta de Credito Santander', 'TARJETA'),
+			(69, 'STODTARJ', 'Tarjeta de Credito', 'TARJETA'),
+			(9, 'COBU', 'Cobranza Usados', 'USADOS'),
+			(60, 'CON', 'Saldo contado', 'USADOS'),
+			(16, 'FINANC 2', 'Financiacion Bancaria Usados', 'USADOS'),
+			(3, 'GSU', 'Gastos de Gestoria Usados', 'USADOS'),
+			(15, 'FPU', 'Financiacion Propia Usados', 'USADOS'),
+			(22, 'DIF.C USAD', 'Dif.de Cambio Usados', 'USADOS'),
+			(24, 'GS TOMA US', 'Gastos de Gestoria x Toma en Usado', 'USADOS'),
+			(26, 'COM USADO', 'Comision Venta de Usado x Usado', 'USADOS'),
+			(58, 'SS1', 'Saldo Caja 1', 'USADOS'),
+			(59, 'SALTUSADO2', 'Saldo toma usados', 'USADOS');
+
+
+
+
+
+
+
+
+END;
+GO
+
+
