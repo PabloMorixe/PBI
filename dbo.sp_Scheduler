@@ -1,0 +1,125 @@
+USE [Tableros];
+GO
+
+IF OBJECT_ID('dbo.sp_Scheduler', 'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_Scheduler;
+GO
+
+create PROCEDURE dbo.sp_Scheduler
+  --  @Pais VARCHAR(30) = 'Argentina'
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE 
+          @ID               INT
+        , @Orden            INT
+        , @SP_Nombre        NVARCHAR(256)
+        , @Frecuencia_Mins  INT
+        , @Ultima_Ejecucion DATETIME2
+        , @Ahora            DATETIME2
+        , @DiffMins         INT
+        , @SQL              NVARCHAR(4000)
+        , @Mensaje          NVARCHAR(MAX)
+        , @ProcLog          NVARCHAR(100);
+
+    -- Momento de referencia de la corrida
+    SET @Ahora = SYSDATETIME();
+
+    -- Tabla en memoria con ORDEN
+    DECLARE @Pendientes TABLE (
+          ID                   INT PRIMARY KEY
+        , Orden                INT NULL
+        , SP_Nombre            NVARCHAR(256)
+        , Frecuencia_Mins      INT
+        , Ultima_Ejecucion     DATETIME2
+    );
+
+    INSERT INTO @Pendientes (ID, Orden, SP_Nombre, Frecuencia_Mins, Ultima_Ejecucion)
+    SELECT  ID,
+            Orden,
+            SP_Nombre,
+            Frecuencia_de_ejecucion_Mins,
+            Ultima_Ejecucion
+    FROM    dbo.Scheduler
+    WHERE   --Pais = @Pais
+      --AND   
+      Habilitado = 1;
+
+    WHILE EXISTS (SELECT 1 FROM @Pendientes)
+    BEGIN
+        SELECT TOP (1)
+              @ID               = ID
+            , @Orden            = Orden
+            , @SP_Nombre        = SP_Nombre
+            , @Frecuencia_Mins  = Frecuencia_Mins
+            , @Ultima_Ejecucion = Ultima_Ejecucion
+        FROM @Pendientes
+        ORDER BY ISNULL(Orden, 999999), ID;  -- ⬅ acá se respeta el Orden
+
+        DELETE FROM @Pendientes WHERE ID = @ID;
+
+        -- Validación nombre SP
+        IF @SP_Nombre IS NULL OR LTRIM(RTRIM(@SP_Nombre)) = ''
+        BEGIN
+            SET @Mensaje = N'SP_Nombre inválido o vacío para ID=' + CONVERT(NVARCHAR(10), @ID);
+            SET @ProcLog = N'<NULL>';
+
+            EXEC log.sp_loguear_procesamiento
+                 @procedimiento = @ProcLog,
+                 @operacion     = N'ERROR',
+                 @cantReg       = 0,
+                 @mensaje       = @Mensaje;
+
+            CONTINUE;
+        END;
+
+        -- Si nunca se ejecutó, forzamos ejecución
+        IF @Ultima_Ejecucion IS NULL
+            SET @DiffMins = 999999;
+        ELSE
+            SET @DiffMins = DATEDIFF(MINUTE, @Ultima_Ejecucion, @Ahora);
+
+        -- Si Frecuencia = 0 => ejecutarlo SIEMPRE que pase el scheduler
+        IF @Frecuencia_Mins = 0 OR @DiffMins >= @Frecuencia_Mins
+        BEGIN
+            BEGIN TRY
+                SET @SQL = N'EXEC ' + @SP_Nombre + N';';
+                EXEC (@SQL);
+
+                SET @Mensaje = N'Ejecución OK. Diff=' 
+                               + CONVERT(NVARCHAR(20), @DiffMins)
+                               + N' Frecuencia=' 
+                               + CONVERT(NVARCHAR(20), @Frecuencia_Mins)
+                               + N'. Última ejecución previa: '
+                               + ISNULL(CONVERT(NVARCHAR(30), @Ultima_Ejecucion, 121), N'<nunca>');
+
+                SET @ProcLog = @SP_Nombre;
+
+                EXEC log.sp_loguear_procesamiento
+                     @procedimiento = @ProcLog,
+                     @operacion     = N'OK',
+                     @cantReg       = 0,
+                     @mensaje       = @Mensaje;
+
+                UPDATE dbo.Scheduler
+                    SET Ultima_Ejecucion = SYSDATETIME()
+                WHERE ID = @ID;
+            END TRY
+            BEGIN CATCH
+                SET @Mensaje = N'Error ejecutando ' + ISNULL(@SP_Nombre, N'<NULL>')
+                               + N'. Número: ' + CONVERT(NVARCHAR(10), ERROR_NUMBER())
+                               + N'. Mensaje: ' + ERROR_MESSAGE();
+
+                SET @ProcLog = ISNULL(@SP_Nombre, N'<NULL>');
+
+                EXEC log.sp_loguear_procesamiento
+                     @procedimiento = @ProcLog,
+                     @operacion     = N'ERROR',
+                     @cantReg       = 0,
+                     @mensaje       = @Mensaje;
+            END CATCH;
+        END
+    END
+END;
+GO
