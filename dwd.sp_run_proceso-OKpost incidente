@@ -1,6 +1,6 @@
 USE [Tableros]
 GO
-/****** Object:  StoredProcedure [dwd].[sp_run_proceso]    Script Date: 25/11/2025 22:15:10 ******/
+/****** Object:  StoredProcedure [dwd].[sp_run_proceso]    Script Date: 25/11/2025 23:04:57 ******/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
@@ -37,10 +37,10 @@ DECLARE @CantidadDeTablas INT;
 -- variable @CantidadDeTablas 
 SELECT @CantidadDeTablas AS CantidadDeTablas;
 EXECUTE @RC = [log].[sp_loguear_procesamiento] 
-    @procedimiento = 'sp_10_Carga_implementacion', 
+    @procedimiento = '[sp_run_proceso]', 
     @operacion = 'Inicio', 
     @cantReg = '',
-    @mensaje = '- - - INICIA Carga Implementacion - - -';
+    @mensaje = '- - - INICIA [sp_run_proceso] - - -';
 --LOGG 
 
 
@@ -844,10 +844,10 @@ WHERE TABLE_SCHEMA = 'DWD';
 -- variable @CantidadDeTablas 
 SELECT @CantidadDeTablas AS CantidadDeTablas;
 EXECUTE @RC = [log].[sp_loguear_procesamiento] 
-    @procedimiento = 'sp_10_Carga_implementacion', 
+    @procedimiento = '[sp_run_proceso]', 
     @operacion = 'FIN', 
     @cantReg = '',
-    @mensaje = '- - - FIN Carga Implementacion - - -';
+    @mensaje = '- - - FIN [sp_run_proceso] - - -';
 --LOGG 
 
 --LLAVE - Key 
@@ -862,8 +862,8 @@ and TABLE_NAME not in ('StoreManagerHist')
 END
 
 
-execute [dwd].[sp_CalcularKPI] 
-execute  [dwd].[sp_CalcularKPI_PostVta]
+--execute [dwd].[sp_CalcularKPI] 
+--execute  [dwd].[sp_CalcularKPI_PostVta]
 END;
 
 
