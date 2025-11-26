@@ -1,0 +1,870 @@
+USE [Tableros]
+GO
+/****** Object:  StoredProcedure [dwd].[sp_run_proceso]    Script Date: 25/11/2025 22:15:10 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+ALTER PROCEDURE [dwd].[sp_run_proceso]
+--with encryption
+--06/03/2025: CAMBIAMOS LOS CRITERIOS DE TIPO DE VENTAID (UNION DE 3 TABLAS  AS UNIFICADO) 
+--02/05/2025: agrega ejecucion sp_InsertarSucursalesContables
+--08/05/2025: agregamos la ejecucion de execute [dwd].[sp_InsertarSucContableSucVenta]
+--10/05/2025: cambiamos el sp  [dwd].[sp_InsertarSucContableSucVenta] por el [dwd].[sp_CargaTablasBackend]
+--10/05/2025: creamos las tablas dwd.MontoAcumuladoVentas0KM_TipoDeSaldo  y agregamos la ingestaal final 
+--25/11/2025: hubo un error y no muestra las preventas, SOSPECHO QUE ES POR QUE no contre el EXECUTE  [sta].[sp_Ingestar_sta]  asi que lo agregue. 
+AS
+BEGIN
+
+
+	-- SET NOCOUNT ON added to prevent extra result sets from
+	-- interfering with SELECT statements.
+	SET NOCOUNT ON;
+
+	--INICIO LOGG
+DECLARE @RC int
+DECLARE @procedimiento nvarchar(100)
+DECLARE @operacion nvarchar(50)
+DECLARE @cantReg int
+DECLARE @mensaje nvarchar(max)
+DECLARE @CantidadDeTablas INT;
+-- TODO: 
+--SELECT @CantidadDeTablas = COUNT(*)
+--FROM INFORMATION_SCHEMA.TABLES
+--WHERE TABLE_SCHEMA = 'STA';
+-- variable @CantidadDeTablas 
+SELECT @CantidadDeTablas AS CantidadDeTablas;
+EXECUTE @RC = [log].[sp_loguear_procesamiento] 
+    @procedimiento = 'sp_10_Carga_implementacion', 
+    @operacion = 'Inicio', 
+    @cantReg = '',
+    @mensaje = '- - - INICIA Carga Implementacion - - -';
+--LOGG 
+
+
+DECLARE @sql NVARCHAR(MAX) = N'';
+SELECT @sql += 'DROP TABLE ' + QUOTENAME(TABLE_SCHEMA) + '.' + QUOTENAME(TABLE_NAME) + '; '
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA = 'dwd' AND TABLE_TYPE = 'BASE TABLE'
+and TABLE_NAME not in ('StoreManagerHist','StoreManager_JefeTallerHist')
+--aca se excluyen las tablas que corresponden a procesos diarios. ya que este es un proceso cada 1 hora
+
+EXEC sp_executesql @sql;
+
+
+
+
+--agregado 25/22/2025
+
+EXECUTE  [sta].[sp_Ingestar_sta] 
+
+
+
+
+--execute [dwd].[sp_InsertarSucContableSucVenta]
+execute [dwd].[sp_CargaTablasBackend]
+
+
+		-- Verificar si la tabla existe y eliminarla
+		IF OBJECT_ID('dwd.sucursalesDeVenta', 'U') IS NOT NULL
+			DROP TABLE dwd.sucursalesDeVenta;
+
+		-- Crear la tabla nuevamente
+		CREATE TABLE dwd.sucursalesDeVenta (
+			Nombre NVARCHAR(255)
+		);
+
+
+		-- Insertar los datos
+		INSERT INTO dwd.sucursalesDeVenta (Nombre)
+		SELECT DISTINCT Nombre FROM [Tableros].[sta].sucursalesDeVenta;
+
+-- Verificar los datos insertados
+SELECT * FROM dwd.sucursalesDeVenta;
+
+
+SELECT * INTO [Tableros].[dwd].[ConsultaUsadosStkFisico_SAICAJA]
+FROM [Tableros].[dwd].[vw_ConsultaUsadosStkFisico_SAICAJA];
+
+
+SELECT * INTO [Tableros].[dwd].[CantTurnos_Postventa_Programados]
+FROM [Tableros].[dwd].[vw_CantTurnos_Postventa_Programados];
+
+--ENTREGAS CONVENCIONAL
+--SELECT * INTO [Tableros].[dwd].[CantUni_Entreg_Canal_Vta_0kmconvencional]
+--FROM [Tableros].[dwd].[vw_CantUni_Entreg_Canal_Vta_0kmconvencional];
+
+
+/*
+--ENTREGAS UNIFICADO ( ESPECIALES - CONVENCIONAL -USADOS) 
+SELECT * INTO [Tableros].[dwd].[Entregas_Unidades_unificado]
+FROM (
+    -- Convencionales
+    SELECT 
+        --YEAR(U.FechaSalida) AS ANIO,
+        --MONTH(U.FechaSalida) AS MES,
+			CONCAT(YEAR(u.FechaSalida), '-', RIGHT(CONCAT('0', MONTH(u.FechaSalida)), 2)) AS mesaño,
+        SDV.Nombre AS SucursalNombre,
+        U.FechaSalida AS FechaSalida,
+        U.Patente AS Patente,
+        TV.Descripcion AS TipoVenta,
+        CLI.Nombre AS Cliente,
+        MODL.Modelo AS Modelo,
+        VEND.Nombre AS Vendedor,
+        PV.PrecioVenta AS PrecioVenta,
+        COALESCE(View_GXP.TotalGasto, 0) AS TotalGastosPV,
+        COALESCE(View_GXP.TotalGasto, 0) + PV.PrecioVenta AS TotalPV,
+        PV.CotizacionDolar AS CotizacionDolar,
+        COL.Descripcion AS Color,
+        U.IDFabrica AS IDFabrica,
+        FAM.Nombre AS Familia,
+        U.VIN AS VIN,
+        PV.PrecioSugerido AS PrecioSugerido,
+        'Convencionales' AS TipoEntrega
+    FROM sta.Preventas PV
+    LEFT JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+    LEFT JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+    LEFT JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+    LEFT JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
+    LEFT JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
+    LEFT JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+    LEFT JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+    LEFT JOIN sta.Unidades U ON U.Preventa = PV.Numero
+    LEFT JOIN sta.Comprobantes C ON U.Factura = C.Control
+    LEFT JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+    WHERE PV.TipoPV = 'O' 
+        AND PV.Anulada = 0 
+        AND PV.TipoDeVentaID <> 2 
+        AND U.FechaSalida IS NOT NULL
+
+    UNION ALL
+
+    -- Especiales
+    SELECT 
+     --   YEAR(U.FechaSalida) AS ANIO,
+     --   MONTH(U.FechaSalida) AS MES,
+	 			CONCAT(YEAR(u.FechaSalida), '-', RIGHT(CONCAT('0', MONTH(u.FechaSalida)), 2)) AS mesaño,
+
+        SDV.Nombre AS SucursalNombre,
+        U.FechaSalida AS FechaSalida,
+        U.Patente AS Patente,
+        TV.Descripcion AS TipoVenta,
+        CLI.Nombre AS Cliente,
+        MODL.Modelo AS Modelo,
+        VEND.Nombre AS Vendedor,
+        PV.PrecioVenta AS PrecioVenta,
+        COALESCE(View_GXP.TotalGasto, 0) AS TotalGastosPV,
+        COALESCE(View_GXP.TotalGasto, 0) + PV.PrecioVenta AS TotalPV,
+        PV.CotizacionDolar AS CotizacionDolar,
+        COL.Descripcion AS Color,
+        U.IDFabrica AS IDFabrica,
+        FAM.Nombre AS Familia,
+        U.VIN AS VIN,
+        PV.PrecioSugerido AS PrecioSugerido,
+        'Especiales' AS TipoEntrega
+    FROM sta.Preventas PV
+    LEFT JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+    LEFT JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+    LEFT JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+    LEFT JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
+    LEFT JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
+    LEFT JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+    LEFT JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+    LEFT JOIN sta.Unidades U ON U.Preventa = PV.Numero
+    LEFT JOIN sta.Comprobantes C ON U.Factura = C.Control
+    LEFT JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+    WHERE PV.TipoPV = 'O' 
+        AND PV.TipoDeVentaID = 2 
+        AND PV.Anulada = 0 
+        AND U.FechaSalida IS NOT NULL
+
+    UNION ALL
+
+    -- Usados (Desde SAI_CAJA)
+    SELECT 
+      --  YEAR(USA.FechaDeEntrega) AS ANIO,
+      --  MONTH(USA.FechaDeEntrega) AS MES,
+	  			CONCAT(YEAR(USA.FechaDeEntrega), '-', RIGHT(CONCAT('0', MONTH(USA.FechaDeEntrega)), 2)) AS mesaño,
+
+        SDV.Nombre AS SucursalNombre,
+        USA.FechaDeEntrega AS FechaSalida,
+        USA.Patente AS Patente,
+        TV.Descripcion AS TipoVenta,
+        CLI.Nombre AS Cliente,
+        USA.Modelo AS Modelo,
+        VEND.Nombre AS Vendedor,
+        PV.PrecioVenta AS PrecioVenta,
+        COALESCE(View_GXP.TotalGasto, 0) AS TotalGastosPV,
+        COALESCE(View_GXP.TotalGasto, 0) + PV.PrecioVenta AS TotalPV,
+        PV.CotizacionDolar AS CotizacionDolar,
+        USA.Color AS Color,
+        NULL AS IDFabrica,
+        USA.Marca AS Familia,
+        USA.VIN AS VIN,
+        PV.PrecioSugerido AS PrecioSugerido,
+        'Usados' AS TipoEntrega
+    FROM sta.Preventas_SAI_CAJA PV
+    LEFT JOIN sta.SucursalesDeVenta_SAI_CAJA SDV ON SDV.Numero = PV.Sucursal
+    LEFT JOIN sta.Clientes_sai_caja CLI ON CLI.Codigo = PV.Cliente
+    LEFT JOIN sta.Vendedores_SAI_CAJA VEND ON VEND.VendedorId = PV.VendedorID
+    LEFT JOIN sta.GastosPorPreventa_SAI_CAJA View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+    LEFT JOIN sta.Usados_SAI_CAJA USA ON USA.Preventa = PV.Numero
+    LEFT JOIN sta.TipoVenta TV ON TV.TipoVentaID = PV.TipoDeVentaID
+    WHERE PV.Anulada = 0 
+        AND PV.TipoPV = 'U' 
+        AND USA.FechaDeEntrega IS NOT NULL
+) AS Unificado;
+*/
+
+--ENTREGAS UNIFICADO ( CONVENCIONAL -Directas -USADOS) 
+SELECT * INTO [Tableros].[dwd].[Entregas_Unidades_unificado]
+FROM (
+    -- Convencionales
+    SELECT 
+        --YEAR(U.FechaSalida) AS ANIO,
+        --MONTH(U.FechaSalida) AS MES,
+			CONCAT(YEAR(u.FechaSalida), '-', RIGHT(CONCAT('0', MONTH(u.FechaSalida)), 2)) AS mesaño,
+        SDV.Nombre AS SucursalNombre,
+        U.FechaSalida AS FechaSalida,
+        U.Patente AS Patente,
+        TV.Descripcion AS TipoVenta,
+        CLI.Nombre AS Cliente,
+        MODL.Modelo AS Modelo,
+        VEND.Nombre AS Vendedor,
+        PV.PrecioVenta AS PrecioVenta,
+        COALESCE(View_GXP.TotalGasto, 0) AS TotalGastosPV,
+        COALESCE(View_GXP.TotalGasto, 0) + PV.PrecioVenta AS TotalPV,
+        PV.CotizacionDolar AS CotizacionDolar,
+        COL.Descripcion AS Color,
+        U.IDFabrica AS IDFabrica,
+        FAM.Nombre AS Familia,
+        U.VIN AS VIN,
+        PV.PrecioSugerido AS PrecioSugerido,
+        'Convencionales' AS TipoEntrega
+    FROM sta.Preventas PV
+    LEFT JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+    LEFT JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+    LEFT JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+    LEFT JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
+    LEFT JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
+    LEFT JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+    LEFT JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+    LEFT JOIN sta.Unidades U ON U.Preventa = PV.Numero
+    LEFT JOIN sta.Comprobantes C ON U.Factura = C.Control
+    LEFT JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+    WHERE PV.TipoPV = 'O' 
+        AND PV.Anulada = 0 
+        AND PV.TipoDeVentaID IN(1,2,5)
+        AND U.FechaSalida IS NOT NULL
+
+    UNION ALL
+
+    -- Venta_Directa
+    SELECT 
+     --   YEAR(U.FechaSalida) AS ANIO,
+     --   MONTH(U.FechaSalida) AS MES,
+	 			CONCAT(YEAR(u.FechaSalida), '-', RIGHT(CONCAT('0', MONTH(u.FechaSalida)), 2)) AS mesaño,
+
+        SDV.Nombre AS SucursalNombre,
+        U.FechaSalida AS FechaSalida,
+        U.Patente AS Patente,
+        TV.Descripcion AS TipoVenta,
+        CLI.Nombre AS Cliente,
+        MODL.Modelo AS Modelo,
+        VEND.Nombre AS Vendedor,
+        PV.PrecioVenta AS PrecioVenta,
+        COALESCE(View_GXP.TotalGasto, 0) AS TotalGastosPV,
+        COALESCE(View_GXP.TotalGasto, 0) + PV.PrecioVenta AS TotalPV,
+        PV.CotizacionDolar AS CotizacionDolar,
+        COL.Descripcion AS Color,
+        U.IDFabrica AS IDFabrica,
+        FAM.Nombre AS Familia,
+        U.VIN AS VIN,
+        PV.PrecioSugerido AS PrecioSugerido,
+        'Venta_Directa' AS TipoEntrega
+    FROM sta.Preventas PV
+    LEFT JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+    LEFT JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+    LEFT JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+    LEFT JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
+    LEFT JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
+    LEFT JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+    LEFT JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+    LEFT JOIN sta.Unidades U ON U.Preventa = PV.Numero
+    LEFT JOIN sta.Comprobantes C ON U.Factura = C.Control
+    LEFT JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+    WHERE PV.TipoPV = 'O' 
+        AND PV.TipoDeVentaID = 4 
+        AND PV.Anulada = 0 
+        AND U.FechaSalida IS NOT NULL
+
+    UNION ALL
+
+    -- Usados (Desde SAI_CAJA)
+    SELECT 
+      --  YEAR(USA.FechaDeEntrega) AS ANIO,
+      --  MONTH(USA.FechaDeEntrega) AS MES,
+	  			CONCAT(YEAR(USA.FechaDeEntrega), '-', RIGHT(CONCAT('0', MONTH(USA.FechaDeEntrega)), 2)) AS mesaño,
+
+        SDV.Nombre AS SucursalNombre,
+        USA.FechaDeEntrega AS FechaSalida,
+        USA.Patente AS Patente,
+        TV.Descripcion AS TipoVenta,
+        CLI.Nombre AS Cliente,
+        USA.Modelo AS Modelo,
+        VEND.Nombre AS Vendedor,
+        PV.PrecioVenta AS PrecioVenta,
+        COALESCE(View_GXP.TotalGasto, 0) AS TotalGastosPV,
+        COALESCE(View_GXP.TotalGasto, 0) + PV.PrecioVenta AS TotalPV,
+        PV.CotizacionDolar AS CotizacionDolar,
+        USA.Color AS Color,
+        NULL AS IDFabrica,
+        USA.Marca AS Familia,
+        USA.VIN AS VIN,
+        PV.PrecioSugerido AS PrecioSugerido,
+        'Usados' AS TipoEntrega
+    FROM sta.Preventas_SAI_CAJA PV
+    LEFT JOIN sta.SucursalesDeVenta_SAI_CAJA SDV ON SDV.Numero = PV.Sucursal
+    LEFT JOIN sta.Clientes_sai_caja CLI ON CLI.Codigo = PV.Cliente
+    LEFT JOIN sta.Vendedores_SAI_CAJA VEND ON VEND.VendedorId = PV.VendedorID
+    LEFT JOIN sta.GastosPorPreventa_SAI_CAJA View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+    LEFT JOIN sta.Usados_SAI_CAJA USA ON USA.Preventa = PV.Numero
+    LEFT JOIN sta.TipoVenta TV ON TV.TipoVentaID = PV.TipoDeVentaID
+    WHERE PV.Anulada = 0 
+        AND PV.TipoPV = 'U' 
+        AND USA.FechaDeEntrega IS NOT NULL
+) AS Unificado;
+	---------------------------------
+
+SELECT * INTO [Tableros].[dwd].[CantUni_Entreg_Canal_Vta_0kmDirecta]
+FROM [Tableros].[dwd].[vw_CantUni_Entreg_Canal_Vta_0kmDirecta];
+
+SELECT * INTO [Tableros].[dwd].[Cant_Unidades_Stock_Usadas]
+FROM [Tableros].[dwd].[vw_Cant_Unidades_Stock_Usadas];
+
+SELECT * INTO [Tableros].[dwd].[Cant_Uni_0Km_Facturadas]
+FROM [Tableros].[dwd].[vw_Cant_Uni_0Km_Facturadas];
+
+SELECT * INTO [Tableros].[dwd].[Cant_Uni_0Km_Fc_Compra_Contabilizada]
+FROM [Tableros].[dwd].[vw_Cant_Uni_0Km_Fc_Compra_Contabilizada];
+
+SELECT * INTO [Tableros].[dwd].[Cant_Uni_0Km_NC_emitidas]
+FROM [Tableros].[dwd].[vw_Cant_Uni_0Km_NC_emitidas];
+
+SELECT * INTO [Tableros].[dwd].[Cant_Uni_Pendientes_Programadas_Entrega]
+FROM [Tableros].[dwd].[vw_Cant_Uni_Pendientes_Programadas_Entrega];
+
+SELECT * INTO [Tableros].[dwd].[Cant_Uni_Program_Entregar]
+FROM [Tableros].[dwd].[vw_Cant_Uni_Program_Entregar];
+
+SELECT * INTO [Tableros].[dwd].[Cant_Ordenes_Postventa_Anuladas_conNotaCredito]
+FROM [Tableros].[dwd].[vw_Cant_Ordenes_Postventa_Anuladas_conNotaCredito];
+
+SELECT * INTO [Tableros].[dwd].[Cant_Repuestos_Anulados_conNotaCredito]
+FROM [Tableros].[dwd].[vw_Cant_Repuestos_Anulados_conNotaCredito];
+
+SELECT * INTO [Tableros].[dwd].[Cant_Repuestos_Facturados_xVenta_Mostrador_Postventa]
+FROM [Tableros].[dwd].[vw_Cant_Repuestos_Facturados_xVenta_Mostrador_Postventa];
+
+--SELECT * INTO [Tableros].[dwd].[Canti_uni_entreg_X_canal_Vta_Usados]
+--FROM [Tableros].[dwd].[vw_Canti_uni_entreg_X_canal_Vta_Usados];
+
+SELECT * INTO [Tableros].[dwd].[Cantidad_Turnos_Postventa_Pendientes]
+FROM [Tableros].[dwd].[vw_Cantidad_Turnos_Postventa_Pendientes];
+
+SELECT * INTO [Tableros].[dwd].[cantunicanalvtausados]
+FROM [Tableros].[dwd].[vw_cantunicanalvtausados];
+
+SELECT * INTO [Tableros].[dwd].[cantvehipatentados]
+FROM [Tableros].[dwd].[vw_cantvehipatentados];
+
+SELECT * INTO [Tableros].[dwd].[cantvtas0kmconvencional]
+FROM [Tableros].[dwd].[vw_cantvtas0kmconvencional];
+
+SELECT * INTO [Tableros].[dwd].[cantvtas0kmDirecta]
+FROM [Tableros].[dwd].[vw_cantvtas0kmDirecta];
+
+SELECT * INTO [Tableros].[dwd].[ConsultaStockFisico]
+FROM [Tableros].[dwd].[vw_ConsultaStockFisico];
+
+SELECT * INTO [Tableros].[dwd].[MontoAcumuladoPatentamientos]
+FROM [Tableros].[dwd].[vw_Monto AcumuladoPatentamientos];
+
+
+
+SELECT * INTO [Tableros].[dwd].[Patentamientos1]
+FROM (
+    -- Nuevo Patentamientos 1
+    SELECT 
+		CONCAT(YEAR(pv.Fecha), '-', RIGHT(CONCAT('0', MONTH(pv.Fecha)), 2)) AS mesaño,
+		SDV.NOMBRE as sucursalNombre,
+        PV.Fecha,
+        PV.Numero,
+        CLI.Nombre as clienteNombre,
+        M.Modelo,
+        V.Nombre AS Vendedor,
+        PV.PrecioVenta,
+        COALESCE(View_GXP.TotalGasto, 0) AS TotalGastosPV,
+        COALESCE(View_GXP.TotalGasto, 0) + PV.PrecioVenta AS TotalPV,
+        PV.CotizacionDolar,
+        COL.Descripcion AS Color,
+        U.IDFabrica,
+        F.Nombre AS Familia,
+        M.DescripcionOperativa,
+        SUM(T_GXP.Importe) AS Total,
+        MAX(CON.Nombre) AS NombreConcepto,
+        MAX(CON.Cuenta) AS CuentaConcepto,
+        MAX(C.CONTROL) AS ControlComprobante
+    FROM sta.Preventas PV
+    LEFT OUTER JOIN sta.GastoXPrevta T_GXP ON T_GXP.PrevtaID = PV.PrevtaID
+    LEFT OUTER JOIN sta.Comprobantes C ON C.CONTROL = T_GXP.Factura
+    LEFT OUTER JOIN sta.Conceptos CON ON CON.ConceptoID = T_GXP.GastoID
+    LEFT OUTER JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+    LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+    LEFT OUTER JOIN sta.Modelos M ON M.Modelo = PV.Modelo
+    LEFT OUTER JOIN sta.Familias F ON F.FamiliaID = M.Familia
+    LEFT OUTER JOIN sta.Vendedores V ON V.VendedorId = PV.VendedorID
+    LEFT OUTER JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+    LEFT OUTER JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+    LEFT OUTER JOIN sta.Unidades U ON U.Preventa = PV.Numero
+    WHERE CON.ConceptoID IN (204, 205)
+        AND PV.Anulada = 0
+    GROUP BY 
+        SDV.NOMBRE,
+        PV.Fecha,
+        PV.Numero,
+        CLI.Nombre,
+        M.Modelo,
+        V.Nombre,
+        PV.PrecioVenta,
+        View_GXP.TotalGasto,
+        PV.CotizacionDolar,
+        COL.Descripcion,
+        U.IDFabrica,
+        F.Nombre,
+        M.DescripcionOperativa
+    HAVING SUM(T_GXP.Importe) >= 1
+) AS Patentamientos1;
+
+
+SELECT * INTO [Tableros].[dwd].[MontoAcumuladoVtaAccesorios]
+FROM [Tableros].[dwd].[vw_Monto AcumuladoVtaAccesorios];
+
+SELECT * INTO [Tableros].[dwd].[MontoAcumuladoVtaSeguros]
+FROM [Tableros].[dwd].[vw_MontoAcumuladoVtaSeguros];
+
+SELECT * INTO [Tableros].[dwd].[MontoAcumuladoPatentamientos2]
+FROM [Tableros].[dwd].[vw_MontoAcumuladoPatentamientos2];
+
+--drop table [Tableros].[dwd].[MontoAcumuladoVentaOrdenesTallerCargoCliente]
+SELECT * INTO [Tableros].[dwd].[MontoAcumuladoVentaOrdenesTallerCargoCliente] from [dwd].[vw_MontoAcumuladoVentaOrdenesTallerCargoCliente] m
+ left outer join    dwd.[vw_VTSER-ULTIMO-COMPROBANTE] v
+ on m.comprobanteID = v.[ID Comprobante]
+
+
+--SELECT * INTO [Tableros].[dwd].[MontoAcumuladoVentaOrdenesTallerCargoCliente]
+--FROM [Tableros].[dwd].[vw_MontoAcumuladoVentaOrdenesTallerCargoCliente];
+
+--drop table [Tableros].[dwd].[MontoAcumuladoVentas0KM]
+SELECT * INTO [Tableros].[dwd].[MontoAcumuladoVentas0KM]
+FROM [Tableros].[dwd].[vw_MontoAcumuladoVentas0KM];
+
+SELECT * INTO [Tableros].[dwd].[MontoAcumuladoVentasUsadosSAICAJA]
+FROM [Tableros].[dwd].[vw_MontoAcumuladoVentasUsadosSAICAJA];
+
+--SELECT * INTO [Tableros].[dwd].[OrdenesRepuestos] FROM [Tableros].[dwd].[vw_OrdenesRepuestos];
+
+--SELECT * INTO [Tableros].[dwd].[OrdenesServicios] FROM [Tableros].[dwd].[vw_OrdenesServicios];
+
+--SELECT * INTO [Tableros].[dwd].[OrdenesTerceros] FROM [Tableros].[dwd].[vw_OrdenesTerceros];
+
+SELECT * INTO [Tableros].[dwd].[CashFlowPV]
+FROM [Tableros].[dwd].[vw_CashFlowPV];
+
+
+--drop table [Tableros].[dwd].ordenesTodo
+
+--SELECT 
+--     ot.* 
+	
+--INTO [Tableros].[dwd].ordenesTodo
+--FROM Tableros.dwd.vw_OrdenesTodo ot
+--LEFT OUTER JOIN tableros.sta.SucursalesDeventa sdv ON ot.[SucursalContable] = sdv.numero
+----select * from Tableros.sta.vw_OrdenesTodo
+
+--Drop table [Tableros].[dwd].ordenesTodo
+SELECT * INTO [Tableros].[dwd].ordenesTodo
+FROM (
+(
+(
+SELECT SO.SucursalContable
+	,SO.Apertura
+	,CONCAT(YEAR(so.Apertura), '-', RIGHT(CONCAT('0', MONTH(so.Apertura)), 2)) AS mesaño
+	,KTR.Orden
+	,SO.CodigoCliente
+	,CLI.Nombre  as CliNombRepuestos
+	,1 AS Tipo
+	,CAR.TipodeCargo
+	,KTR.Cargo
+	,CAR.Descripcion
+	,KTR.Precio
+	,CASE 
+		WHEN LEFT(KTR.Documento, 2) = 'VA'
+			THEN KTR.Cantidad
+		ELSE (- 1) * KTR.Cantidad
+		END AS Cant
+	,(
+		CASE 
+			WHEN LEFT(KTR.Documento, 2) = 'VA'
+				THEN KTR.Cantidad
+			ELSE - KTR.Cantidad
+			END
+		) * KTR.Precio * KTR.Cotizacion AS Monto
+	,KTR.Costo * KTR.CotizacionCompra * (
+		CASE 
+			WHEN LEFT(KTR.Documento, 2) = 'VA'
+				THEN KTR.Cantidad
+			ELSE - KTR.Cantidad
+			END
+		) AS MontoCosto
+	,KTR.Repuesto
+	,REP.Descripcion AS DES
+	,REC.Nombre AS Recepcionista
+	,SO.Cierre
+	,KTR.Documento
+FROM sta.KardexTR AS KTR
+LEFT OUTER JOIN sta.Cargos AS CAR ON KTR.Cargo = CAR.Codigo
+LEFT OUTER JOIN sta.ServiciosOrdenes AS SO ON KTR.Orden = SO.NumeroOrden
+	AND KTR.Sucursal = SO.SucursalContable
+LEFT OUTER JOIN sta.Clientes AS CLI ON SO.CodigoCliente = CLI.Codigo
+LEFT OUTER JOIN sta.Repuestos AS REP ON KTR.Repuesto = REP.Codigo
+	AND KTR.GestionID = REP.GestionID
+LEFT OUTER JOIN sta.Recepcionistas AS REC ON SO.Recepcionista = REC.Codigo
+WHERE (KTR.Orden <> 0)) --2
+
+
+
+
+
+
+
+
+
+UNION ALL
+
+
+
+(SELECT SO.SucursalContable
+	,so.Apertura as fechaApertura
+	,CONCAT(YEAR(so.Apertura), '-', RIGHT(CONCAT('0', MONTH(so.Apertura)), 2)) AS mesaño
+	,SO.NumeroOrden AS Orden
+	,CLI.Codigo AS CodigoCliente
+	,CLI.Nombre as ClinombreTerceros
+	,3 AS Tipo
+	,CAR.TipodeCargo
+	,CAR.Codigo AS Cargo
+	,CAR.Descripcion
+	,SUM(SOD.Venta) AS Precio
+	,1 AS Cant
+	,SUM(SOD.Venta) AS Monto
+	,SUM(SOD.Standard) AS MontoCosto
+	,SOD.Codigo AS Repuesto
+	,SER.Descripcion AS Des
+	,REC.Nombre AS Recepcionista
+	,SO.Cierre
+	,CASE 
+		WHEN SOD.ComprobanteFactura = ''
+			THEN SOD.ComprobanteRemito
+		ELSE SOD.ComprobanteFactura
+		END AS Documento
+FROM sta.ServiciosOrdenes AS SO
+LEFT OUTER JOIN sta.Recepcionistas AS REC ON SO.Recepcionista = REC.Codigo
+LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD ON SO.SucursalContable = SOD.SucursalContable
+	AND SO.NumeroOrden = SOD.NumeroOrden
+LEFT OUTER JOIN sta.Clientes AS CLI ON SO.CodigoCliente = CLI.Codigo
+LEFT OUTER JOIN sta.Servicios AS SER ON SOD.Codigo = SER.Codigo
+LEFT OUTER JOIN sta.Cargos AS CAR ON SOD.Cargo = CAR.Codigo
+WHERE (SER.OrigenServicio = 'T')
+GROUP BY SOD.Codigo
+	,so.apertura
+	,SO.NumeroOrden
+	,CAR.Descripcion
+	,CAR.TipodeCargo
+	,CLI.Codigo
+	,CLI.Nombre  
+	,SO.Cierre
+	,SOD.Tipo
+	,SER.Descripcion
+	,SO.SucursalContable
+	,CAR.Codigo
+	,REC.Nombre
+	,SOD.ComprobanteFactura
+	,SOD.ComprobanteRemito
+	)
+
+
+
+
+
+
+
+
+UNION ALL
+(SELECT SO.SucursalContable
+	,SOD.Fecha as fechaOServicios
+	,CONCAT(YEAR(SOD.Fecha), '-', RIGHT(CONCAT('0', MONTH(SOD.Fecha)), 2)) AS mesaño
+	,SO.NumeroOrden AS Orden
+	,CLI.Codigo AS CodigoCliente
+	,CLI.Nombre 
+	,2 AS Tipo
+	,CAR.TipodeCargo
+	,SODS.Cargo
+	,CAR.Descripcion
+	,SUM(SODS.VentaUnitario) AS Precio
+	,SUM(SODS.TiempoaFacturar) AS Cant
+	,SUM(SODS.TiempoaFacturar * SODS.VentaUnitario) AS Monto
+	,SUM(SODS.TiempoEmpleado * SODS.CostoUnitario) AS MontoCosto
+	,SOD.Codigo AS Repuesto
+	,SER.Descripcion AS Des
+	,REC.Nombre AS Recepcionista
+	,SO.Cierre
+	,SOD.ComprobanteFactura AS Documento
+FROM sta.ServiciosOrdenes AS SO
+LEFT OUTER JOIN sta.Recepcionistas AS REC ON SO.Recepcionista = REC.Codigo
+LEFT OUTER JOIN sta.ServiciosOrdenesDetalle AS SOD ON SO.SucursalContable = SOD.SucursalContable
+	AND SO.NumeroOrden = SOD.NumeroOrden
+LEFT OUTER JOIN sta.ServiciosOrdenesDetalleDeServicios AS SODS ON SOD.ServiciosOrdenesDetalleId = SODS.IdServicio
+LEFT OUTER JOIN sta.Cargos AS CAR ON SODS.Cargo = CAR.Codigo
+LEFT OUTER JOIN sta.Servicios AS SER ON SODS.Servicio = SER.Codigo
+LEFT OUTER JOIN sta.Clientes AS CLI ON SO.CodigoCliente = CLI.Codigo
+WHERE (SER.OrigenServicio = 'P')
+GROUP BY SOD.Codigo
+	,SOD.Fecha
+	,SO.NumeroOrden
+	,SODS.Cargo
+	,CAR.Descripcion
+	,CAR.TipodeCargo
+	,CLI.Codigo
+	,CLI.Nombre 
+	,SO.Cierre
+	,SOD.Tipo
+	,SER.Descripcion
+	,SO.SucursalContable
+	,REC.Nombre 
+	,SOD.ComprobanteFactura) ) ot
+
+
+LEFT OUTER JOIN tableros.sta.SucursalesDeventa sdv ON ot.[SucursalContable] = sdv.numero
+)
+
+
+
+
+
+
+-----------------------------
+-- Eliminar la tabla si ya existe
+IF OBJECT_ID('dwd.Patentamientos1y2', 'U') IS NOT NULL
+DROP TABLE dwd.Patentamientos1y2;
+
+-- Crear y poblar la tabla con datos de la primera vista
+SELECT 
+    [ANIO],
+    [MES],
+    [mesaño],
+    [SucursalNombre],
+    [Fecha],
+    [Numero],
+    [ClienteNombre],
+    [Modelo],
+    [VendedorNombre],
+    [FamiliaNombre],
+    [PrecioVenta],
+    [TotalGastosPV],
+    [TotalPV],
+    [CotizacionDolar],
+    [Descripcion],
+    [IDFabrica],
+    [Familia],
+    [DescripcionOperativa],
+    [Total],
+    [Nombre],
+    [Cuenta],
+    'Patentamientos 1' AS Tipo
+INTO dwd.Patentamientos1y2
+--select * 
+FROM [Tableros].[dwd].[vw_MontoAcumuladoPatentamientos];
+
+-- Insertar datos de la segunda vista en la tabla existente
+INSERT INTO dwd.Patentamientos1y2 (
+    [ANIO],
+    [MES],
+    [mesaño],
+    [SucursalNombre],
+    [Fecha],
+    [Numero],
+  --  [ClienteNombre],
+    [Modelo],
+  --  [VendedorNombre],
+  --  [FamiliaNombre],
+  --  [PrecioVenta],
+   -- [TotalGastosPV],
+   -- [TotalPV],
+   -- [CotizacionDolar],
+  --  [Descripcion],
+  --  [IDFabrica],
+  --  [Familia],
+  --  [DescripcionOperativa],
+    [Total],
+ --   [Nombre],
+  --  [Cuenta],
+    Tipo
+)
+SELECT
+    [ANIO],
+    [MES],
+    [mesaño],
+    [SucursalNombre],
+    [Fecha], 
+ --   CAST(NULL AS INT) AS Numero,
+    [Preventa],
+    'Usado' AS Modelo,
+   -- NULL AS VendedorNombre,
+  --  NULL AS FamiliaNombre,
+  --  NULL AS PrecioVenta,
+  --  NULL AS TotalGastosPV,
+ --   NULL AS TotalPV,
+ --   NULL AS CotizacionDolar,
+ --   NULL AS Descripcion,
+ --   NULL AS IDFabrica,
+ --   NULL AS Familia,
+ --   NULL AS DescripcionOperativa,
+    [IMPORTE] ,
+ --   [Cliente] ,
+     'Patentamientos 2' AS Tipo
+FROM [Tableros].[dwd].[vw_MontoAcumuladoPatentamientos2];
+
+
+
+
+
+
+
+--SELECT * INTO [Tableros].[dwd].CantUni_Entreg_Canal_Vta_0kmEspecial
+--FROM [Tableros].dwd.vw_CantUni_Entreg_Canal_Vta_0kmEspecial;
+
+
+SELECT * INTO [Tableros].[dwd].OrdenesPostVta_Xapertura_Q
+FROM [Tableros].dwd.vw_OrdenesPostVta_Xapertura_Q;
+
+
+------------------------------------
+
+IF OBJECT_ID('[Tableros].dwd.MontoAcumuladoVentas0KM_TipoDeSaldo', 'U') IS NOT NULL
+    DROP TABLE [Tableros].dwd.MontoAcumuladoVentas0KM_TipoDeSaldo;
+
+CREATE TABLE [Tableros].dwd.MontoAcumuladoVentas0KM_TipoDeSaldo (
+    Fecha DATE NOT NULL,
+    Sucursal NVARCHAR(100),                -- Nombre de sucursal
+    Importe DECIMAL(18,2),                 -- Monto en pesos
+    Referencia nvarchar(15),                        -- Número de preventa referenciado
+    DescripcionOperativa NVARCHAR(200),   -- Descripción del modelo
+    Color NVARCHAR(100),                  -- Descripción del color
+    Motivo nvarchar(15),                           -- Código del motivo
+    DescripcionMotivo NVARCHAR(200),     -- Descripción del motivo
+    TipoDeSaldo NVARCHAR(50)             -- Clasificación del tipo de saldo
+);
+
+
+INSERT INTO [Tableros].dwd.MontoAcumuladoVentas0KM_TipoDeSaldo
+( 
+
+--fecha
+--,sucursalNombre
+----PVNumero
+--,importe
+--,referencia
+----origen
+--,descripcionOperativa
+--,color
+----unidadTipo
+----Ubicacion
+----fcNumero
+--,motivo
+--,DescripcionMotivo,
+--TipoDeSaldo
+    Fecha,
+    Sucursal,
+    Importe,
+    Referencia,
+    DescripcionOperativa,
+    Color,
+    Motivo,
+    DescripcionMotivo,
+    TipoDeSaldo
+)
+
+    SELECT 
+        PV.Fecha,
+        SDV.Nombre AS Sucursal,
+        --SUM(DC.Saldo) AS Importe,
+		DC.Importe,
+        DC.Referencia,
+        M.DescripcionOperativa,
+        COL.Descripcion,
+        DC.Motivo,
+		TDS.DescripcionMotivo,
+		TDS.TipoDeSaldo
+    FROM sta.DetCash AS DC
+    INNER JOIN sta.Preventas PV ON PV.Numero = DC.Referencia
+    LEFT OUTER JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+    LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+    LEFT OUTER JOIN sta.Modelos M ON M.Modelo = PV.Modelo
+    LEFT OUTER JOIN sta.Familias F ON F.FamiliaID = M.Familia
+    LEFT OUTER JOIN sta.Vendedores V ON V.VendedorId = PV.VendedorID
+    LEFT OUTER JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+    LEFT OUTER JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+    LEFT OUTER JOIN sta.Unidades U ON U.Preventa = PV.Numero
+	LEFT OUTER JOIN dwd.TiposDeSaldo TDS ON DC.Motivo = TDS.Motivo
+    WHERE PV.Anulada = 0 
+      AND PV.TipoDeVentaID <> 2 
+	  and  dc.origen <> 'RC'
+         GROUP BY DC.Referencia, DC.Motivo, SDV.Nombre,DC.Importe, YEAR(PV.Fecha), MONTH(PV.Fecha), PV.Fecha, CLI.Nombre, M.DescripcionFormal, V.Nombre, PV.PrecioVenta, View_GXP.TotalGasto, PV.CotizacionDolar, COL.Descripcion, U.IDFabrica, PV.PrecioLista, F.Nombre, M.DescripcionOperativa, 	TDS.DescripcionMotivo,
+		TDS.TipoDeSaldo
+----------------------------------
+
+
+----------------
+-- TODO: 
+SELECT @CantidadDeTablas = COUNT(*)
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA = 'DWD';
+-- variable @CantidadDeTablas 
+SELECT @CantidadDeTablas AS CantidadDeTablas;
+EXECUTE @RC = [log].[sp_loguear_procesamiento] 
+    @procedimiento = 'sp_10_Carga_implementacion', 
+    @operacion = 'FIN', 
+    @cantReg = '',
+    @mensaje = '- - - FIN Carga Implementacion - - -';
+--LOGG 
+
+--LLAVE - Key 
+IF GETDATE() > '2027-03-01'
+BEGIN
+    PRINT 'RENOVAR KEY'
+
+SELECT @sql += 'DROP TABLE ' + QUOTENAME(TABLE_SCHEMA) + '.' + QUOTENAME(TABLE_NAME) + '; '
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA = 'dwd' AND TABLE_TYPE = 'BASE TABLE'
+and TABLE_NAME not in ('StoreManagerHist')
+END
+
+
+execute [dwd].[sp_CalcularKPI] 
+execute  [dwd].[sp_CalcularKPI_PostVta]
+END;
+
+
+select * from dwd.OrdenesTodo
