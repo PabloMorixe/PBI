@@ -1,7 +1,7 @@
 USE [Tableros]
 GO
 
-/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI]    Script Date: 21/11/2025 18:40:51 ******/
+/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI]    Script Date: 26/11/2025 23:26:43 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -836,5 +836,4 @@ END
 
 
 GO
-
 
