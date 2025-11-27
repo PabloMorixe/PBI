@@ -1,11 +1,14 @@
 USE [Tableros]
 GO
-/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI]    Script Date: 17/11/2025 21:50:02 ******/
+
+/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI_PostVta]    Script Date: 26/11/2025 23:27:13 ******/
 SET ANSI_NULLS ON
 GO
+
 SET QUOTED_IDENTIFIER ON
 GO
-alter PROCEDURE [dwd].[sp_CalcularKPI_PostVta]
+
+CREATE PROCEDURE [dwd].[sp_CalcularKPI_PostVta]
  --WITH ENCRYPTION -- Agrega encriptación
 --17/04/2025
 --
@@ -28,7 +31,7 @@ BEGIN
 									@procedimiento = 'sp_CalcularKPI_PostVta', 
 									@operacion = 'Inicio', 
 									@cantReg = '',
-									@mensaje = '- - -recopila [sp_CalcularKPI_PostVta] - - -';
+									@mensaje = 'Calcula KPI Post Vta para Tablero Gerente PostVentas';
 -----------------------------------------------------
 --FIN  LOGG
 -----------------------------------------------------nn
@@ -286,18 +289,14 @@ select * from dwd.KPI_PostVta where indicadorKPI = 'ACont-LeadTime-fechafacturaR
 	--descripcionOperativa ,
 	--cantidad,
 	--familia, 
-
-	indicadorKPI,
+		indicadorKPI,
 	TipoVta)
-
-
-
-
+	   	 
 	  SELECT 
 	  fecha,
 	  [control],
 	  		   CONCAT(YEAR(Fecha), '-', RIGHT(CONCAT('0', MONTH(Fecha)), 2)) AS mesaño ,
-			   sucursal,
+			   scsv.sucursalVentaNombre,
 			   total,
 			   nombre,
 			   'KPI_PostVenta_D_VtaFIsicaVSVtaOnline',
@@ -315,13 +314,17 @@ select * from dwd.KPI_PostVta where indicadorKPI = 'ACont-LeadTime-fechafacturaR
         ELSE 'OTRO'
     END AS KPIValue
 FROM sta.Comprobantes C
+left outer join [dwd].[SucContableSucVenta] scsv 
+ on c.Sucursal = scsv.SucContableNro
+
 WHERE C.Origen = 'VTREP';
 
 
 ---------------------------------------------
 --KPI_PostVenta_E_LeadTImeOrdenesCerradasXCargo
 
-select  * from dwd.KPI_PostVta where indicadorKPI = '5'
+select * from dwd.KPI_PostVta where indicadorKPI = 'LeadTImeOrdenesCerradasXCargo'
+
 INSERT INTO dwd.KPI_PostVta (
     FechaApertura,
     FechaCierre,
@@ -337,18 +340,30 @@ SELECT
     SDV.Nombre                    AS sucursalNombre,
     CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
     CAR.TipodeCargo               AS Cargo,
-    DATEDIFF(DAY, SO.Apertura, SO.Cierre) AS KPIValue
-	,'LeadTImeOrdenesCerradasXCargo' as indicadorKPI
-	     
-FROM sta.ServiciosOrdenes SO
+    DATEDIFF(DAY, SO.Apertura, SO.Cierre) AS KPIValue,
+    'LeadTImeOrdenesCerradasXCargo' AS indicadorKPI
 
-LEFT JOIN sta.ServiciosOrdenesDetalle SOD
-       ON SO.SucursalContable = SOD.SucursalContable
-      AND SO.NumeroOrden      = SOD.NumeroOrden
---LEFT JOIN sta.ServiciosOrdenesDetalleDeServicios SODS       ON SOD.ServiciosOrdenesDetalleId = SODS.IdServicio
+FROM sta.ServiciosOrdenes SO
 LEFT JOIN sta.Cargos CAR
-       ON SO.Cargo = CAR.Codigo
+    ON SO.Cargo = CAR.Codigo
 LEFT JOIN sta.SucursalesDeVenta SDV
-       ON SO.SucursalContable = SDV.Numero where so.cargo = '' or so.cargo is null
+    ON SO.SucursalContable = SDV.Numero
+WHERE
+    -- Se valida que no sean NULL y tampoco vacías ('')
+    (SO.Apertura IS NOT NULL AND SO.Apertura <> '')
+    AND
+    (SO.Cierre IS NOT NULL AND SO.Cierre <> '')
+
+    -- Validación de Cargo existente
+    AND (SO.Cargo IS NOT NULL AND SO.Cargo <> '')
 	   		 	  	  
-	  end
+	  
+	  				EXECUTE @RC = [log].[sp_loguear_procesamiento] 
+									@procedimiento = 'sp_CalcularKPI_PostVta', 
+									@operacion = 'Fins - OK ', 
+									@cantReg = '',
+									@mensaje = 'Finalizado - Calcula KPI Post Vta para Tablero Gerente PostVentas';
+
+	  end -- fin de store procedure
+GO
+
