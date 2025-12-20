@@ -1,14 +1,11 @@
 USE [Tableros]
 GO
-
-/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI_PostVta]    Script Date: 26/11/2025 23:27:13 ******/
+/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI_PostVta]    Script Date: 19/12/2025 22:11:38 ******/
 SET ANSI_NULLS ON
 GO
-
 SET QUOTED_IDENTIFIER ON
 GO
-
-CREATE PROCEDURE [dwd].[sp_CalcularKPI_PostVta]
+ALTER PROCEDURE [dwd].[sp_CalcularKPI_PostVta]
  --WITH ENCRYPTION -- Agrega encriptación
 --17/04/2025
 --
@@ -60,16 +57,21 @@ BEGIN
 								KPIValue float,
 								ClienteNombre nvarchar(100),
 								cantidad int,
-																Familia nvarchar(100),
-																TipoVta nvarchar(100),
-																MontoTotalRepuestos float,
-        MontoTotalServiciosPropios float,
-        MontoTotalServiciosTerceros float,
-        SucursalOrden varchar(100),
-        FechaApertura datetime,
-        FechaCierre datetime,
-        indicador nvarchar(50),
-		cargo varchar(50)
+								Familia nvarchar(100),
+								TipoVta nvarchar(100),
+								MontoTotalRepuestos float,
+								MontoTotalServiciosPropios float,
+								MontoTotalServiciosTerceros float,
+								SucursalOrden varchar(100),
+								FechaApertura datetime,
+								FechaCierre datetime,
+								indicador nvarchar(50),
+								cargo varchar(100),
+								--cargoDescripcion varchar(100),
+								tipoCargo varchar(100),
+								tipoCargoDescripcion varchar(100),
+								gruposCodigo varchar(100),
+								gruposCodigoDescripcion varchar(100)
 
 
 
@@ -303,12 +305,12 @@ select * from dwd.KPI_PostVta where indicadorKPI = 'ACont-LeadTime-fechafacturaR
 
     --C.*,
     CASE 
-        WHEN C.CondicionVenta IN ('MERCADO LIBRE', 'TIENDA ON LINE', 'SALE')
+        WHEN C.CondicionVenta IN ('MERCADO LIBRE', 'TIENDA ON LINE')
             THEN 'ONLINE'
         WHEN C.CondicionVenta IN (
                 'TARJETA', 'TARJETA 3 CUOTAS', 'TARJETA 6 CUOTAS',
                 'TARJETA 9 CUOTAS', 'TARJETA 12 CUOTAS',
-                'CONTADO', 'CUENTA CORRIENTE', 'EFECTIVO'
+                'CONTADO', 'CUENTA CORRIENTE', 'EFECTIVO', 'SALE'
              )
             THEN 'FISICA'
         ELSE 'OTRO'
@@ -323,23 +325,32 @@ WHERE C.Origen = 'VTREP';
 ---------------------------------------------
 --KPI_PostVenta_E_LeadTImeOrdenesCerradasXCargo
 
-select * from dwd.KPI_PostVta where indicadorKPI = 'LeadTImeOrdenesCerradasXCargo'
+
+--select * from dwd.KPI_PostVta where indicadorKPI = 'LeadTImeOrdenesCerradasXCargo'
 
 INSERT INTO dwd.KPI_PostVta (
     FechaApertura,
     FechaCierre,
     sucursalNombre,
     SucursalOrden,
-    Cargo,
+    tipoCargo ,
+	tipoCargoDescripcion ,
+    gruposCodigo ,
+	gruposCodigoDescripcion ,
     KPIValue,
 	indicadorKPI
+
 )
 SELECT
     SO.Apertura                   AS FechaApertura,
     SO.Cierre                     AS FechaCierre,
     SDV.Nombre                    AS sucursalNombre,
     CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
-    CAR.TipodeCargo               AS Cargo,
+    --CAR.TipodeCargo               AS Cargo,  
+	car.Tipodecargo as tipoCargo,
+	car.Descripcion as tipoCargoDescripcion,
+    g.codigo as gruposCodigo,
+	g.Descripcion as gruposCodigoDescripcion,
     DATEDIFF(DAY, SO.Apertura, SO.Cierre) AS KPIValue,
     'LeadTImeOrdenesCerradasXCargo' AS indicadorKPI
 
@@ -348,6 +359,9 @@ LEFT JOIN sta.Cargos CAR
     ON SO.Cargo = CAR.Codigo
 LEFT JOIN sta.SucursalesDeVenta SDV
     ON SO.SucursalContable = SDV.Numero
+LEFT JOIN sai..Grupos G
+    ON SO.Grupo = G.Codigo
+    
 WHERE
     -- Se valida que no sean NULL y tampoco vacías ('')
     (SO.Apertura IS NOT NULL AND SO.Apertura <> '')
@@ -357,6 +371,8 @@ WHERE
     -- Validación de Cargo existente
     AND (SO.Cargo IS NOT NULL AND SO.Cargo <> '')
 	   		 	  	  
+
+	   		 	  	  
 	  
 	  				EXECUTE @RC = [log].[sp_loguear_procesamiento] 
 									@procedimiento = 'sp_CalcularKPI_PostVta', 
@@ -365,5 +381,3 @@ WHERE
 									@mensaje = 'Finalizado - Calcula KPI Post Vta para Tablero Gerente PostVentas';
 
 	  end -- fin de store procedure
-GO
-
