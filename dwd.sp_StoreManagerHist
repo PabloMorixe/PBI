@@ -10,7 +10,7 @@ GO
 
 
 
-CREATE  PROCEDURE [dwd].[sp_StoreManagerHist]
+alter  PROCEDURE [dwd].[sp_StoreManagerHist]
 --WITH ENCRYPTION -- Agrega encriptación
 --06/03/2025: cambiamos a comercial preventas a entregar (/campo fecha PV por fewcha salida) 
 
@@ -24,92 +24,6 @@ BEGIN
 
 	EXEC dbo.GenerarCalendario;
 
-
-		--IF OBJECT_ID('tableros.dbo.calendar', 'U') IS NOT NULL
-		--DROP TABLE tableros.dbo.calendar;
-
-
-	--DECLARE @SQL NVARCHAR(MAX);
-
-	--	-- Componer la instrucción para eliminar la tabla en el servidor vinculado
-	--	SET @SQL = '
-	--	IF OBJECT_ID(''tableros.dbo.calendar'', ''U'') IS NOT NULL
-	--	DROP TABLE tableros.dbo.calendar;
-	--	';
-	--		-- Ejecutar el comando en el servidor vinculado lema
-	--		EXEC (@SQL) AT lema;
-
-	
---------------------------------------------------------------------
---	-- Crear la tabla de calendario 
---CREATE TABLE dbo.Calendar (
---    Date DATE PRIMARY KEY, -- Fecha completa en formato YYYY-MM-DD
---    Año CHAR(4),           -- Año en formato de 4 dígitos
---    Mes CHAR(2),           -- Mes en formato de 2 dígitos
---    AñoMes CHAR(7)         -- AñoMes en formato YYYY-MM
---);
-
-
---DECLARE @SQL2 NVARCHAR(MAX);
----- Componer la instrucción para crear la tabla en el servidor vinculado
---SET @SQL2 = '
---CREATE TABLE dbo.Calendar (
---    Date DATE PRIMARY KEY, -- Fecha completa en formato YYYY-MM-DD
---    Año CHAR(4),           -- Año en formato de 4 dígitos
---    Mes CHAR(2),           -- Mes en formato de 2 dígitos
---    AñoMes CHAR(7)         -- AñoMes en formato YYYY-MM
---);';
-
----- Ejecutar la instrucción en el servidor vinculado lema
---EXEC (@SQL2) AT lema;
---------------------------------------------------------------------
-
----- Insertar datos desde 2015-01-01 hasta 2040-12-31
---DECLARE @StartDate DATE = '2015-01-01';
---DECLARE @EndDate DATE = getdate();
-
---WITH DateRange AS (
---    SELECT @StartDate AS Date
---    UNION ALL
---    SELECT DATEADD(DAY, 1, Date)
---    FROM DateRange
---    WHERE Date < @EndDate
---)
---INSERT INTO Calendar (Date, Año, Mes, AñoMes)
---SELECT 
---    CONVERT(CHAR(10), Date, 120) AS Date, -- Fecha completa en formato YYYY-MM-DD
---    FORMAT(Date, 'yyyy') AS Año,         -- Año en 4 dígitos
---    FORMAT(Date, 'MM') AS Mes,           -- Mes en 2 dígitos
---    FORMAT(Date, 'yyyy-MM') AS AñoMes    -- AñoMes en formato YYYY-MM
---FROM DateRange
---OPTION (MAXRECURSION 0);
-
---DECLARE @SQL3 NVARCHAR(MAX);
-
----- Componer la instrucción para insertar datos en la tabla Calendar en el servidor vinculado lema
---SET @SQL3 = '
---DECLARE @StartDate DATE = ''2015-01-01'';
---DECLARE @EndDate DATE = GETDATE();
-
---WITH DateRange AS (
---    SELECT @StartDate AS Date
---    UNION ALL
---    SELECT DATEADD(DAY, 1, Date)
---    FROM DateRange
---    WHERE Date < @EndDate
---)
---INSERT INTO dbo.Calendar (Date, Año, Mes, AñoMes)
---SELECT 
---    CONVERT(CHAR(10), Date, 120) AS Date, -- Fecha completa en formato YYYY-MM-DD
---    FORMAT(Date, ''yyyy'') AS Año,         -- Año en 4 dígitos
---    FORMAT(Date, ''MM'') AS Mes,           -- Mes en 2 dígitos
---    FORMAT(Date, ''yyyy-MM'') AS AñoMes    -- AñoMes en formato YYYY-MM
---FROM DateRange
---OPTION (MAXRECURSION 0);
---';
-
----- Ejecutar la instrucción en el servidor vinculado lema
---EXEC (@SQL3) AT lema;
 
 -----------------------------------------------------
 --INICIO LOGG
@@ -539,7 +453,6 @@ SELECT
     dwd.MontoAcumuladoVentasUsadosSAICAJA;
 
 
-
 --SECCION ADMINISTRACION COMERCIAL ---
 --c1--------------------------------------------------- AComercial-Unidades a recibir 0KM - Con Preventa - Facturada Q   
 INSERT INTO dwd.StoreManagerHist 
@@ -547,6 +460,7 @@ INSERT INTO dwd.StoreManagerHist
     fecha,
     sucursalNombre, -- Si necesitas agregar una sucursal por defecto, utiliza un valor constante
     PVNumero,       -- Se puede asignar un valor constante o NULL si no es aplicable
+	Clientenombre,
     importe,        -- Se puede asignar un valor constante o NULL si no hay un importe específico
     referencia,     -- Campo obligatorio, se puede asignar una nota predeterminada
     origen,
@@ -561,8 +475,10 @@ SELECT
     --CURRENT_TIMESTAMP AS Fecha,
 	u.FechaDePedido,
     SDV.Nombre AS sucursalNombre,        -- Placeholder para sucursal (ajustar si es necesario)
-    u.Preventa          -- Placeholder para PVNumero (ajustar si es necesario)
-    ,MODL.CostoDeCompra AS importe, -- Costo de compra como importe
+    u.Preventa,          -- Placeholder para PVNumero (ajustar si es necesario)
+	c.nombre,
+
+    MODL.CostoDeCompra AS importe, -- Costo de compra como importe
     'Fecha=fechadePedido' AS referencia, -- Nota fija (ajustar según sea necesario)
     O.Nombre AS origen,
     MODL.DescripcionOperativa,
@@ -579,6 +495,7 @@ LEFT OUTER JOIN sta.Modelos MODL ON U.Modelo = MODL.Modelo
 LEFT OUTER JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
 LEFT OUTER JOIN sta.Preventas PV ON U.Preventa = PV.Numero
 LEFT OUTER JOIN sta.SucursalesDeventa SDV on PV.Sucursal = SDV.Numero
+LEFT OUTER JOIN sta.Clientes C on pv.cliente = c.codigo
 WHERE 
     U.UnidadTipo IN ('P', 'E')
     AND U.Asignada = 1
@@ -587,7 +504,7 @@ WHERE
     AND U.Preventa <> '' 
     AND UBI.Descripcion <> 'DEMOS'
     AND U.FechaDeRecepcion IS NULL;
-
+	--select * from 
 
 	--SE REEMPLAZA POR LA QUERY DE ARRIBA; 2/4/2025
 
@@ -784,8 +701,8 @@ INSERT INTO dwd.StoreManagerHist
 (
     fecha
     ,sucursalNombre -- Si necesitas agregar una sucursal por defecto, utiliza un valor constante
-    ,PVNumero       -- Se puede asignar un valor constante o NULL si no es aplicable
-    --ClienteNOmbre,  N/A --   
+    ,PVNumero  ,     -- Se puede asignar un valor constante o NULL si no es aplicable
+    ClienteNOmbre--,  N/A --   
   	,Modelo 
 	,importe        -- Se puede asignar un valor constante o NULL si no hay un importe específico
 	--,referencia     -- Campo obligatorio, se puede asignar una nota predeterminada
@@ -803,6 +720,7 @@ SELECT
      pv.Fecha
 		,SDV.Nombre as SucursalNombre
 		,pv.Numero
+		,c.Nombre
 		,u.Modelo
 	,CASE 
 		WHEN View_GXP.TotalGasto IS NULL
@@ -925,6 +843,7 @@ INSERT INTO [Tableros].dwd.StoreManagerHist
 
 fecha
 ,sucursalNombre
+--,clientenombre
 --PVNumero
 ,importe
 ,referencia
@@ -941,6 +860,7 @@ fecha
 SELECT 
         PV.Fecha,
 		SDV.Nombre AS Sucursal,
+	--	c.Nombre,
 		        SUM(DC.Saldo) AS Importe
 		      --CASE  
         --WHEN View_GXP.TotalGasto is null then 0 
@@ -985,6 +905,8 @@ FROM
         ON COL.ColorID=PV.ColorID
         LEFT OUTER JOIN sta.Unidades U
         ON U.Preventa=PV.Numero
+		--LEFT OUTER JOIN sta.clientes C
+  --      ON pv.cliente =c.codigo
 
         WHERE 
     PV.Anulada=0 and PV.TipoDeVentaID <>2 and DC.motivo in ('SENA',
@@ -1424,4 +1346,3 @@ HAVING
 
 END;
 GO
-
