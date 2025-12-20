@@ -1,14 +1,11 @@
 USE [Tableros]
 GO
-
-/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI]    Script Date: 26/11/2025 23:26:43 ******/
+/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI]    Script Date: 19/12/2025 22:24:12 ******/
 SET ANSI_NULLS ON
 GO
-
 SET QUOTED_IDENTIFIER ON
 GO
-
-CREATE PROCEDURE [dwd].[sp_CalcularKPI]
+ALTER PROCEDURE [dwd].[sp_CalcularKPI]
  --WITH ENCRYPTION -- Agrega encriptación
 --17/04/2025
 --
@@ -278,6 +275,7 @@ INSERT INTO dwd.ResultadosKPI
 	(
 		fechafactura,                
 		FechaSalida,
+		fechaPatentamiento,
 		PVNumero,
 		mesaño,
 		sucursalNombre,
@@ -298,12 +296,15 @@ INSERT INTO dwd.ResultadosKPI
 		
 	)
 
+
+	--
 	SELECT 
 		 u.FacturaFecha,
 		 --pv.Fecha AS fechaPV,
 		 U.FECHASALIDA AS FechaSalida,
+		 u.FechaPatentamiento,
 		 pv.Numero AS PVNumero,
-		 CONCAT(YEAR(U.FECHASALIDA ), '-', RIGHT(CONCAT('0', MONTH(U.FECHASALIDA )), 2)) AS mesaño , -- <== aquí la lógica
+		 CONCAT(YEAR(U.FechaPatentamiento ), '-', RIGHT(CONCAT('0', MONTH(U.FechaPatentamiento )), 2)) AS mesaño , -- <== aquí la lógica
 		 SDV.Nombre AS sucursalNombre,
 		 u.IDFabrica,
 		 U.Patente,
@@ -834,6 +835,4 @@ WHERE
 
 END
 
-
-GO
 
