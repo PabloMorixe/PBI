@@ -279,6 +279,9 @@ FROM SAI_CAJA.DBO.GastosPorPreventa
 SELECT * INTO [Tableros].[sta].[SucursalesDeVenta_SAI_CAJA]
 FROM SAI_CAJA.DBO.SucursalesDeVenta
 
+SELECT * INTO [Tableros].[sta].[gestiones]
+FROM sai.DBO.[gestiones]
+
 --FIN SP
 
 
