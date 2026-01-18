@@ -1,6 +1,6 @@
 USE [Tableros]
 GO
-/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI]    Script Date: 19/12/2025 22:24:12 ******/
+/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI]    Script Date: 18/1/2026 19:44:11 ******/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
@@ -39,6 +39,10 @@ BEGIN
 								DROP TABLE tableros.dwd.ResultadosKPI;
 							create TABLE dwd.ResultadosKPI (
 								id INT IDENTITY(1,1) PRIMARY KEY,     -- Identificador único, autoincremental
+								PrecioDeToma DATETIME, 
+								PrecioDeVenta DATETIME, 
+								FechaDeAlta DATETIME, 
+								FechaDeIngreso DATETIME,
 								FechaDePedido DATETIME  ,    
 								FechaFacturaCP DATETIME  ,    
 								FechaDeRecepcion DATETIME  ,                   
@@ -52,10 +56,11 @@ BEGIN
 								mesaño nvarchar(7), 
 								motivo varchar(10),
 								sucursalNombre nvarchar(100),
-								IDFabrica varchar (15) ,
+								IDFabrica varchar (30) ,
 								patente varchar(8),
 								ClienteNombre nvarchar(100)
 								,Modelo nvarchar(100)
+								,ModeloAño nvarchar(4)
 								,importe  float 
 								,referencia nvarchar (100)  --campo de notas manuales 
 								,origen varchar(50)
@@ -74,14 +79,21 @@ BEGIN
 								,CobranzaNro varchar(100)
 								,CashID int
 								,Repuesto varchar(100)
-								--Este campo, se utiliza como filtro para el indicador a mostrar. Coincidira con el titulo de cada seccion. 
-								--,Motivo nvarchar(100)-- este campo contiene el motivo deuda detcash 
-								--,cheque nvarchar(100) --este campo contiene el motivo deuda detcash 
+								,VIN varchar(100)
+								,Motor varchar(100),
 
+
+								StockActual FLOAT,          -- Para guardar ISNULL(STK.Stock_Q, 0)
+    VentasMensuales FLOAT,      -- Para guardar ISNULL(VTA.Ventas_Q, 0)
+    FechaUltimaVenta DATETIME,  -- Para guardar HIST.Fechxa_Ultima_Venta
+    Familia nvarchar(100)      -- Para guardar ISNULL(F.Nombre, 'SIN FAMILIA')
+					
 							);
 
+							----------------------
+
 		
-	
+	 
 							--LLAVE - Key 
 							IF GETDATE() > '2029-03-01'
 							BEGIN
@@ -156,23 +168,11 @@ BEGIN
 									INSERT INTO dwd.ResultadosKPI 
 									(
 										fechaPV,                
-										--FechaSalida,
 										PVNumero,
 										mesaño,
 										motivo,
-										sucursalNombre,
-										--IDFabrica,
-										--patente,
-										--ClienteNombre,
+										sucursalNombre,								
 										Modelo,
-										--importe,
-										--referencia,   -- campo de notas manuales 
-										--origen,       -- sale de o.Nombre como marca
-										--descripcionOperativa,
-										--color,
-										--unidadTipo,
-										--Ubicacion,
-										--fcNumero,
 										TipoDeSaldo,
 										indicadorKPI,
 										KPIValue      -- cálculo del lead time
@@ -371,87 +371,101 @@ INSERT INTO dwd.ResultadosKPI
 		
 	)
 
-	SELECT 
-		 u.FechaDePedido,
-		 --pv.Fecha AS fechaPV,
-		 U.FechaDeRecepcion,
-		 pv.Numero AS PVNumero,
-		 CONCAT(YEAR(U.FechaDeRecepcion ), '-', RIGHT(CONCAT('0', MONTH(U.FechaDeRecepcion )), 2)) AS mesaño , -- <== aquí la lógica
-		 SDV.Nombre AS sucursalNombre,
-		 u.IDFabrica,
-		 U.Patente,
-		 CLI.Nombre AS ClienteNombre,
-		 u.Modelo,
-		 CASE 
-			WHEN View_GXP.TotalGasto IS NULL THEN PV.PrecioVenta
-			ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
-		 END AS importe,
-		 pv.Numero AS referencia,
-		 o.Nombre AS origen,
-		 modl.DescripcionOperativa,
-		 COL.Descripcion AS color,
-		 u.UnidadTipo,
-		 ubi.Descripcion AS Ubicacion,
-		 u.Factura AS fcNumero,
-		 'ACom-LeadTime-FechaPedido/FechaRecepcion' AS indicadorKPI,
-		 DATEDIFF(DAY, U.FechaDePedido, u.FechaDeRecepcion) AS KPIValue
-	FROM sta.unidades u
-	--sta.Preventas PV
-	LEFT JOIN sta.Preventas PV ON U.Preventa = PV.Numero
-	LEFT JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
-	LEFT JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
-	LEFT JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
-	LEFT JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
-	LEFT JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
-	LEFT JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
-	LEFT JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
-	--LEFT JOIN sta.Unidades U ON U.Preventa = PV.Numero
-	LEFT JOIN sta.Comprobantes C ON U.Factura = c.CONTROL
-	LEFT JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
-	LEFT JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
-	LEFT JOIN sta.Ubicaciones UBI ON U.Ubicacion = UBI.UbicacionID
-	where u.FechaDeRecepcion is not null
+
+					SELECT 
+							 u.FechaDePedido,
+							 --pv.Fecha AS fechaPV,
+							 U.FechaDeRecepcion,
+							 pv.Numero AS PVNumero,
+							 CONCAT(YEAR(U.FechaDeRecepcion ), '-', RIGHT(CONCAT('0', MONTH(U.FechaDeRecepcion )), 2)) AS mesaño , -- <== aquí la lógica
+							 SDV.Nombre AS sucursalNombre,
+							 u.IDFabrica,
+							 U.Patente,
+							 CLI.Nombre AS ClienteNombre,
+							 u.Modelo,
+							 CASE 
+								WHEN View_GXP.TotalGasto IS NULL THEN PV.PrecioVenta
+								ELSE (View_GXP.TotalGasto + PV.PrecioVenta)
+							 END AS importe,
+							 pv.Numero AS referencia,
+							 o.Nombre AS origen,
+							 modl.DescripcionOperativa,
+							 COL.Descripcion AS color,
+							 u.UnidadTipo,
+							 ubi.Descripcion AS Ubicacion,
+							 u.Factura AS fcNumero,
+							 'ACom-LeadTime-FechaPedido/FechaRecepcion' AS indicadorKPI,
+							 DATEDIFF(DAY, U.FechaDePedido, u.FechaDeRecepcion) AS KPIValue
+						FROM sta.unidades u
+						--sta.Preventas PV
+						LEFT JOIN sta.Preventas PV ON U.Preventa = PV.Numero
+						LEFT JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
+						LEFT JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+						LEFT JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
+						LEFT JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
+						LEFT JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
+						LEFT JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
+						--LEFT JOIN sta.Unidades U ON U.Preventa = PV.Numero
+						LEFT JOIN sta.Comprobantes C ON U.Factura = c.CONTROL
+						LEFT JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+						LEFT JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
+						LEFT JOIN sta.Ubicaciones UBI ON U.Ubicacion = UBI.UbicacionID
+						LEFT JOIN sta.SucursalesDeventa SDV ON SDV.Numero = UBI.SucursalDeVenta
+	
+						where u.FechaDeRecepcion is not null
 
 			
 
---B4--------------------------------------------------- ACom-LeadTime-FechaCompra/FechaRecepcion
+--KPI33-B4--------------------------------------------------- ACom-LeadTime-FechaCompra/FechaRecepcion
 ----- Lead time ingreso de FC compra vs recepción de unidad
+
 ;WITH FCcompraOKM AS (
-	SELECT     
-		U.UnidadID,
-		C.ObjetoAsociado AS IDFabrica,
-		C.Fecha AS FechaFactura,
-		C.Control AS NroFactura,
-		C.Origen, 
-		SUM(CASE WHEN C.Documento = 'NC' THEN C.Gravado * (-1) ELSE C.Gravado END) AS gravado,
-		SUM(CASE WHEN C.Documento = 'NC' THEN C.IVA * (-1) ELSE C.IVA END) AS iva, 
-		SUM(CASE WHEN C.Documento = 'NC' THEN C.Total ELSE C.Total * (-1) END) AS total
-	FROM sta.Comprobantes C 
-	LEFT JOIN SAI..referencias R ON C.Referencia = R.Referencia
-	LEFT JOIN sta.Unidades U ON C.ObjetoAsociado = U.IDFabrica
-	GROUP BY U.UnidadID, C.ObjetoAsociado, C.Origen, C.Fecha, C.Control
-	HAVING C.Origen = 'CPOKM'
+    SELECT      
+        U.UnidadID,
+        C.ObjetoAsociado AS IDFabrica,
+        C.Fecha AS FechaFactura,
+        C.Control AS NroFactura,
+        C.Origen, 
+        -- Incluimos el nombre de la sucursal en la CTE para poder usarlo fuera
+        scsv.sucursalventanombre,
+        SUM(CASE WHEN C.Documento = 'NC' THEN C.Gravado * (-1) ELSE C.Gravado END) AS gravado,
+        SUM(CASE WHEN C.Documento = 'NC' THEN C.IVA * (-1) ELSE C.IVA END) AS iva, 
+        SUM(CASE WHEN C.Documento = 'NC' THEN C.Total ELSE C.Total * (-1) END) AS total
+    FROM sta.Comprobantes C WITH (NOLOCK)
+    LEFT JOIN SAI..referencias R WITH (NOLOCK) ON C.Referencia = R.Referencia
+    LEFT JOIN sta.Unidades U WITH (NOLOCK) ON C.ObjetoAsociado = U.IDFabrica
+    LEFT JOIN dwd.SucContableSucVenta scsv WITH (NOLOCK) ON C.sucursal = scsv.succontablenro
+    WHERE C.Origen = 'CPOKM'
+    GROUP BY 
+        U.UnidadID, 
+        C.ObjetoAsociado, 
+        C.Origen, 
+        C.Fecha, 
+        C.Control,
+        scsv.sucursalventanombre -- Obligatorio por el GROUP BY
 )
 INSERT INTO dwd.ResultadosKPI 
 (
-	FechaFacturaCP,                
-	FechaDeRecepcion,
-	mesaño,
-	IDFabrica,
-	indicadorKPI,
-	KPIValue		
+    FechaFacturaCP,                
+    FechaDeRecepcion,
+    mesaño,
+    sucursalNombre,
+    IDFabrica,
+    indicadorKPI,
+    KPIValue        
 )
 SELECT 
-	fc.FechaFactura AS FechaFacturaCP, 
-	U.FechaDeRecepcion,
-	CONCAT(YEAR(U.FechaDeRecepcion), '-', RIGHT('0' + CAST(MONTH(U.FechaDeRecepcion) AS VARCHAR), 2)) AS mesaño,
-	FC.IDFabrica,
-	'ACom-LeadTime-FechaCompra/FechaRecepcion',
-	DATEDIFF(DAY, fc.FechaFactura, U.FechaDeRecepcion) AS KPIValue
-FROM sta.Unidades U
+    fc.FechaFactura AS FechaFacturaCP, 
+    U.FechaDeRecepcion,
+    CONCAT(YEAR(U.FechaDeRecepcion), '-', RIGHT('0' + CAST(MONTH(U.FechaDeRecepcion) AS VARCHAR), 2)) AS mesaño,
+    fc.sucursalventanombre, -- Ahora accedemos vía el alias de la CTE 'fc'
+    FC.IDFabrica,
+    'ACom-LeadTime-FechaCompra/FechaRecepcion',
+    DATEDIFF(DAY, fc.FechaFactura, U.FechaDeRecepcion) AS KPIValue
+FROM sta.Unidades U WITH (NOLOCK)
 INNER JOIN FCcompraOKM FC ON FC.IDFabrica = U.IDFabrica
 WHERE U.FechaDeRecepcion IS NOT NULL;
-  
+
 
 
   
@@ -493,15 +507,16 @@ INSERT INTO dwd.ResultadosKPI
 	,modl.Modelo
 	,o.Nombre
 	,'ACom-PVporMarcayModelo'
-	from 
- 
- sta.Preventas PV
-								LEFT JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
-								LEFT JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
-								LEFT JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
-								WHERE PV.Anulada = 0
-								  AND PV.TipoDeVentaID = 1
+	from sta.Preventas PV
+	LEFT JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
+	LEFT JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
+	LEFT JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
+	--WHERE PV.Anulada = 0
+	--AND PV.TipoDeVentaID = 1
+WHERE PV.TipoPV = 'O'
+		AND PV.Anulada = 0
 
+	--SELECT TipoDeVentaID* FROM STA.PREVENTAS
 
 
 
@@ -519,18 +534,12 @@ INSERT INTO dwd.ResultadosKPI
 		PVNumero,
 		mesaño,
 		sucursalNombre,
-	--	IDFabrica,
-	--	patente,
---		ClienteNombre,
+
 		Modelo,
---		importe,
---		referencia,   -- campo de notas manuales 
+
 		origen,       -- sale de o.Nombre como marca
 		descripcionOperativa,
---		color,
---		unidadTipo,	
---		Ubicacion,
---		fcNumero,
+
 		indicadorKPI
 		--,KPIValue      -- cálculo del lead time
 		,PreventasCargadas      -- cálculo del lead time
@@ -573,72 +582,11 @@ INSERT INTO dwd.ResultadosKPI
 						LEFT JOIN sta.GastosPorPreventa GXP  ON GXP.PrevtaID = PV.PrevtaID
 						LEFT JOIN sta.TipoVenta TV           ON PV.TipoDeVentaID = TV.TipoVentaID
 						LEFT JOIN sta.SucursalesDeventa SDV  ON SDV.Numero = PV.Sucursal
-						where pv.anulada = 0 and tv.Especial <> 1 --Filtra las ventas especiales por que no se facturan ya que son VENTAS DIRECTAS 
+						WHERE PV.TipoPV = 'O'
+						AND PV.Anulada = 0
+						--and tv.Especial <> 1 --Filtra las ventas especiales por que no se facturan ya que son VENTAS DIRECTAS 
 						
 						
-
---SELECT 
-
---	pv.fecha
---	,pv.Numero
---	,CONCAT(YEAR(pv.Fecha), '-', RIGHT('0' + CAST(MONTH(pv.Fecha) AS VARCHAR), 2)) AS mesaño
---	,SDV.Nombre AS sucursalNombre
---	 ,MODL.Modelo
---	,O.Nombre AS Marca --origen   
---    ,MODL.DescripcionOperativa AS ModeloDescOp
---										,'ACom-PreventasVsFacturacion0km',
-
---    -- Total preventas cargadas
---    COUNT(PV.Numero) AS PreventasCargadas,
-
---    -- Total preventas facturadas (con las condiciones que mencionaste)
---    SUM(CASE 
---            WHEN PV.TipoPV = 'O'
---             AND PV.Anulada = 0
---             AND U.FacturaFecha IS NOT NULL
---             AND U.Confirmada = 1
---             AND U.Factura LIKE 'VTOKM-FC%' 
---            THEN 1 ELSE 0 
---        END) AS PreventasFacturadas
-
---    ---- Porcentaje facturación vs preventas
---    --CAST(
---    --    (100.0 * SUM(CASE 
---    --                    WHEN PV.TipoPV = 'O'
---    --                     AND PV.Anulada = 0
---    --                     AND U.FacturaFecha IS NOT NULL
---    --                     AND U.Confirmada = 1
---    --                     AND U.Factura LIKE 'VTOKM-FC%' 
---    --                    THEN 1 ELSE 0 
---    --                 END) 
---    --    / NULLIF(COUNT(PV.Numero),0)) 
---    --AS DECIMAL(5,2)) AS PorcentajeFacturacion
-
-
---FROM sta.Preventas PV
---    LEFT OUTER JOIN sta.Modelos MODL ON MODL.Modelo = PV.Modelo
---    LEFT OUTER JOIN sta.Familias FAM ON FAM.FamiliaID = MODL.Familia
---    LEFT OUTER JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
---    LEFT OUTER JOIN sta.Unidades U ON U.Preventa = PV.Numero
---    LEFT OUTER JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
---    LEFT OUTER JOIN sta.Vendedores VEND ON VEND.VendedorId = PV.VendedorID
---    LEFT OUTER JOIN sta.Colores COL ON COL.ColorID = PV.ColorID
---    LEFT OUTER JOIN sta.GastosPorPreventa View_GXP ON View_GXP.PrevtaID = PV.PrevtaID
---    LEFT OUTER JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
---    LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
---    LEFT OUTER JOIN sta.Comprobantes C ON U.Factura = C.Control
-
---GROUP BY 
---	--pv.fecha
-----	,pv.Numero
-----	,CONCAT(YEAR(pv.Fecha), '-', RIGHT('0' + CAST(MONTH(pv.Fecha) AS VARCHAR), 2)) 
---		--,SDV.Nombre ,
---    O.Nombre,
---    MODL.Modelo,
---    MODL.DescripcionOperativa
-----ORDER BY     ANIO, MES, Marca, Modelo;
-
-
 
 		
 
@@ -689,18 +637,12 @@ INSERT INTO dwd.ResultadosKPI
 		FechaSalida,
 		mesaño,
 		sucursalNombre,
-	--	IDFabrica,
-	--	patente,
---		ClienteNombre,
+	
 		Modelo,
---		importe,
---		referencia,   -- campo de notas manuales 
+
 		origen,       -- sale de o.Nombre como marca
 		descripcionOperativa,
---		color,
---		unidadTipo,	
---		Ubicacion,
---		fcNumero,
+
 		indicadorKPI
 		--,KPIValue      -- cálculo del lead time
 		,PreventasCargadas      -- cálculo del lead time
@@ -759,7 +701,7 @@ INSERT INTO dwd.ResultadosKPI
 
 --c5--------------------------------------------------- 'ACom-DiasEnStock0KM'
  --SELECT * FROM dwd.ResultadosKPI WHERE indicadorKPI = 'ACom-DiasEnStock0KM'
-
+ --KPI14
 
 
 INSERT INTO dwd.ResultadosKPI 
@@ -775,7 +717,9 @@ INSERT INTO dwd.ResultadosKPI
     indicadorKPI,
     KPIValue,             -- días en stock
     PreventasCargadas,
-    PreventasFacturadas
+    PreventasFacturadas,
+	unidadtipo
+
 )
 SELECT 
     PV.Fecha                              AS fechaPV,
@@ -803,7 +747,13 @@ SELECT
          AND U.Factura LIKE 'VTOKM-FC%'  -- factura de venta 0km, no NC
         THEN 1 
         ELSE NULL 
-    END AS PreventasFacturadas
+    END AS PreventasFacturadas,
+	CASE 
+    WHEN UnidadTipo = 'E' THEN 'Especial'	
+    WHEN UnidadTipo = 'P' THEN 'Propia'
+    WHEN UnidadTipo = 'C' THEN 'Consignación'
+    ELSE 'Otros' -- O puedes poner: ISNULL(UnidadTipo, 'Sin Definir')
+END AS unidadTipo
 FROM sta.Preventas PV
 LEFT JOIN sta.Modelos MODL           ON MODL.Modelo = PV.Modelo
 LEFT JOIN sta.Familias FAM           ON FAM.FamiliaID = MODL.Familia
@@ -823,12 +773,289 @@ WHERE
 
 
 
+----------------------------------------------------------------------------------------------------------
+--KPI16 USADOS_DiasStock
+--USADOS_DiasStock
+----------------------------------------------------------------------------------------------------------
 
 
 
+INSERT INTO dwd.ResultadosKPI (
+    origen,             -- 1
+    Modelo,             -- 2
+    ModeloAño,          -- 3
+    patente,            -- 4
+    color,              -- 5
+    unidadTipo,         -- 6
+    Ubicacion,          -- 7
+    vin,                -- 8
+    motor,              -- 9
+    FechaDeAlta,        -- 10
+    FechaDeIngreso,     -- 11
+    FechaSalida,        -- 12
+    importe,            -- 13
+    KPIValue,           -- 14
+    indicadorKPI,       -- 15
+    sucursalNombre      -- 16	
+)
+SELECT 
+    u.Marca,                                            -- 1
+    u.Modelo,                                           -- 2
+    u.Anio,                                             -- 3 (Mapeado a ModeloAño)
+    u.Patente,                                          -- 4
+    u.Color,                                            -- 5
+    CAST(u.TipoVehiculoID AS VARCHAR(100)),             -- 6
+    u.Ubicacion,                                        -- 7
+    u.VIN,                                              -- 8
+    u.Motor,                                            -- 9
+    u.FechaDeAlta,                                      -- 10
+    u.FechaDeIngreso,                                   -- 11
+    u.FechaSalida,                                      -- 12
+    u.PrecioDeVenta,                                    -- 13
+    CAST(DATEDIFF(DAY, u.FechaDeIngreso, GETDATE()) AS FLOAT), -- 14
+    'USADOS_DiasStock',                                 -- 15
+    SDV.Nombre                                          -- 16
+FROM 
+    sta.Usados AS u WITH (NOLOCK)
+    LEFT JOIN sta.Ubicaciones AS UB WITH (NOLOCK) 
+        ON u.Ubicacion = UB.UbicacionID
+    LEFT JOIN sta.SucursalesDeventa AS SDV WITH (NOLOCK) 
+        ON UB.SucursalDeVenta = SDV.Numero
+WHERE 
+    (u.FechaDeIngreso IS NOT NULL) 
+    AND (u.Asignada = 0) 
+    AND (u.Entregada = 0) 
+    AND (u.Estado = 'Activado');
+	
+	
+	--QUERY DE VALIDACION
+			--SELECT 
+			--	sucursalNombre,
+			--	indicadorKPI,
+			--	KPIValue,
+			--	origen,
+			--	Modelo,
+			--	ModeloAño,
+			--	patente,
+			--	color,
+			--	unidadTipo,
+			--	Ubicacion,
+			--	vin,
+			--	motor,
+			--	FechaDeAlta,
+			--	FechaDeIngreso,
+			--	FechaSalida,
+			--	importe
+			--FROM dwd.ResultadosKPI WITH (NOLOCK)
+			--WHERE indicadorKPI = 'USADOS_DiasStock';
+
+
+	-----
+
+
+					---------------------------------------------------------------------------------------------------------
+					-- KPI14-CoberturaStockXMarcayModelo(- Stock: Tiempo stock por marca y modelo: Días de stock según ventas x marca y modelo)
+					----------------------------------------------------------------------------------------------------------
+					DECLARE @FechaHoy DATETIME = GETDATE();
+					DECLARE @FechaInicioVentas DATETIME = DATEADD(DAY, -30, @FechaHoy); 
+
+					WITH Stock_Por_Modelo AS (
+						SELECT 
+							UBI.SucursalDeVenta AS SucursalID,
+							U.Modelo,
+							COUNT(*) AS Stock_Q
+						FROM sta.Unidades U WITH (NOLOCK)
+						LEFT JOIN sta.Ubicaciones UBI WITH (NOLOCK) ON U.Ubicacion = UBI.UbicacionID
+						WHERE 
+							U.UnidadTipo = 'P'          
+							AND U.FechaDeRecepcion IS NOT NULL 
+							AND U.FechaSalida IS NULL   
+							AND U.Preventa = ''         
+							AND (UBI.Descripcion <> 'DEMOS') 
+							AND (U.Preventa <> 'EGRESO DIRECTO')
+						GROUP BY 
+							UBI.SucursalDeVenta, 
+							U.Modelo
+					),
+					Ventas_30_Dias AS (
+						SELECT 
+							PV.Sucursal AS SucursalID,
+							PV.Modelo,
+							COUNT(*) AS Ventas_Q
+						FROM sta.Preventas PV WITH (NOLOCK)
+						WHERE 
+							PV.TipoPV = 'O'             
+							AND PV.Anulada = 0          
+							AND PV.Fecha >= @FechaInicioVentas
+						GROUP BY 
+							PV.Sucursal, 
+							PV.Modelo
+					),
+					Ranking_Ventas AS (
+						SELECT 
+							PV.Sucursal AS SucursalID,
+							PV.Modelo,
+							PV.Fecha,
+							PV.Numero AS PVNumero,
+							ROW_NUMBER() OVER (PARTITION BY PV.Sucursal, PV.Modelo ORDER BY PV.Fecha DESC) AS Rn
+						FROM sta.Preventas PV WITH (NOLOCK)
+						WHERE 
+							PV.TipoPV = 'O'             
+							AND PV.Anulada = 0  
+					),
+					Ultima_Venta_Historica AS (
+						SELECT 
+							SucursalID,
+							Modelo,
+							Fecha AS Fecha_Ultima_Venta,
+							PVNumero AS PV_Ultima_Venta
+						FROM Ranking_Ventas
+						WHERE Rn = 1
+					)
+					INSERT INTO dwd.ResultadosKPI (
+						sucursalNombre,
+						origen,
+						Modelo,
+						indicadorKPI,
+						KPIValue,
+						PVNumero,
+						StockActual,
+						VentasMensuales,
+						FechaUltimaVenta,
+						Familia
+					)
+					SELECT 
+						ISNULL(S.Nombre, 'SIN SUCURSAL')                AS sucursalNombre,
+						ISNULL(O.Nombre, 'SIN MARCA')                   AS origen,
+						COALESCE(STK.Modelo, VTA.Modelo)                AS Modelo,
+						'KPI14-CoberturaStockXMarcayModelo'                   AS indicadorKPI,
+						CASE 
+							WHEN ISNULL(VTA.Ventas_Q, 0) > 0 THEN 
+								CAST(ISNULL(STK.Stock_Q, 0) AS FLOAT) / CAST(VTA.Ventas_Q AS FLOAT)
+							WHEN HIST.Fecha_Ultima_Venta IS NOT NULL THEN 
+								(DATEDIFF(DAY, HIST.Fecha_Ultima_Venta, @FechaHoy) / 30.0) * ISNULL(STK.Stock_Q, 0)
+							ELSE 999
+						END                                             AS KPIValue,
+						HIST.PV_Ultima_Venta                            AS PVNumero,
+						ISNULL(STK.Stock_Q, 0)                          AS StockActual,
+						ISNULL(VTA.Ventas_Q, 0)                         AS VentasMensuales,
+						HIST.Fecha_Ultima_Venta                         AS FechaUltimaVenta,
+						ISNULL(F.Nombre, 'SIN FAMILIA')                 AS Familia
+					FROM Stock_Por_Modelo STK
+					FULL OUTER JOIN Ventas_30_Dias VTA 
+						ON STK.SucursalID = VTA.SucursalID 
+						AND STK.Modelo = VTA.Modelo
+					LEFT JOIN Ultima_Venta_Historica HIST
+						ON COALESCE(STK.SucursalID, VTA.SucursalID) = HIST.SucursalID
+						AND COALESCE(STK.Modelo, VTA.Modelo) = HIST.Modelo
+					LEFT JOIN sta.Modelos M WITH (NOLOCK) ON COALESCE(STK.Modelo, VTA.Modelo) = M.Modelo
+					LEFT JOIN sta.Origenes O WITH (NOLOCK) ON M.Origen = O.OrigenID
+					LEFT JOIN sta.Familias F WITH (NOLOCK) ON M.Familia = F.FamiliaID
+					LEFT JOIN sta.SucursalesDeventa S WITH (NOLOCK) ON COALESCE(STK.SucursalID, VTA.SucursalID) = S.Numero
+					WHERE COALESCE(STK.Modelo, VTA.Modelo) IS NOT NULL;
+
+					---
+
+					-- VALIDACIÓN FINAL
+					--SELECT 
+					--    sucursalNombre,
+					--    origen,
+					--    Modelo,
+					--    indicadorKPI,
+					--    KPIValue,
+					--    PVNumero,
+					--    StockActual,
+					--    VentasMensuales,
+					--    FechaUltimaVenta,
+					--    Familia
+					--FROM dwd.ResultadosKPI
+					--WHERE indicadorKPI = 'KPI14-CoberturaStockXMarcayModelo'
+					
+
+---------------------------------------------------------------------------------------------------------
+-- KPI17- STOCK: COBERTURA GLOBAL POR SUCURSAL
+----------------------------------------------------------------------------------------------------------
+--DECLARE @FechaHoy DATETIME = GETDATE();
+--DECLARE @FechaInicioVentas DATETIME = DATEADD(DAY, -30, @FechaHoy); 
+
+WITH Stock_Global AS (
+    SELECT 
+        UBI.SucursalDeVenta AS SucursalID,
+        COUNT(*) AS Stock_Q
+    FROM sta.Unidades U WITH (NOLOCK)
+    LEFT JOIN sta.Ubicaciones UBI WITH (NOLOCK) ON U.Ubicacion = UBI.UbicacionID
+    WHERE 
+        U.UnidadTipo = 'P'          
+        AND U.FechaDeRecepcion IS NOT NULL 
+        AND U.FechaSalida IS NULL   
+        AND U.Preventa = ''         
+        AND (UBI.Descripcion <> 'DEMOS') 
+        AND (U.Preventa <> 'EGRESO DIRECTO')
+    GROUP BY 
+        UBI.SucursalDeVenta
+),
+Ventas_Globales AS (
+    SELECT 
+        PV.Sucursal AS SucursalID,
+        COUNT(*) AS Ventas_Q
+    FROM sta.Preventas PV WITH (NOLOCK)
+    WHERE 
+        PV.TipoPV = 'O'             
+        AND PV.Anulada = 0          
+        AND PV.Fecha >= @FechaInicioVentas
+    GROUP BY 
+        PV.Sucursal
+)
+
+INSERT INTO dwd.ResultadosKPI (
+    sucursalNombre,
+ --   origen,
+ --   Modelo,
+    indicadorKPI,
+    KPIValue,
+--    PVNumero,
+    StockActual,
+    VentasMensuales
+ --   FechaUltimaVenta,
+--    Familia
+)
+SELECT 
+    ISNULL(S.Nombre, 'SIN SUCURSAL')                AS sucursalNombre,
+   -- NULL                                            AS origen,  -- NULL como pediste
+    --NULL                                            AS Modelo,  -- NULL como pediste
+    'KPI17-CoberturaStockGlobal'                    AS indicadorKPI,
+    
+    -- Tu cálculo original
+    CASE 
+        WHEN ISNULL(VTA.Ventas_Q, 0) > 0 THEN 
+            CAST(ISNULL(STK.Stock_Q, 0) AS FLOAT) / CAST(VTA.Ventas_Q AS FLOAT)
+        ELSE 
+            999 
+    END                                             AS KPIValue,
+
+    --NULL                                            AS PVNumero, -- No aplica
+    ISNULL(STK.Stock_Q, 0)                          AS StockActual,
+    ISNULL(VTA.Ventas_Q, 0)                         AS VentasMensuales
+    --NULL                                            AS FechaUltimaVenta, -- No aplica
+    --NULL                                            AS Familia   -- NULL como pediste
+
+FROM Stock_Global STK
+FULL OUTER JOIN Ventas_Globales VTA 
+    ON STK.SucursalID = VTA.SucursalID
+LEFT JOIN sta.SucursalesDeventa S WITH (NOLOCK) 
+    ON COALESCE(STK.SucursalID, VTA.SucursalID) = S.Numero
+WHERE 
+    COALESCE(STK.SucursalID, VTA.SucursalID) IS NOT NULL;
 
 
 
+    --VALIDACION DE DATOS
+    select    sucursalNombre,
+    indicadorKPI,
+    KPIValue,
+    StockActual,
+    VentasMensuales
+     from dwd.ResultadosKPI where indicadorKPI = 'KPI17-CoberturaStockGlobal'
 
 --select * from Tableros.dwd.ResultadosKPI where indicadorkpi = 'Com0KM-LeadTime-FechaPreVTa/RemitoFechaSalida'
 --execute dwd.sp_CalcularKPI
