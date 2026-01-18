@@ -1,16 +1,14 @@
 USE [Tableros]
 GO
-
-/****** Object:  StoredProcedure [dwd].[sp_StoreManagerHist]    Script Date: 29/7/2025 20:35:32 ******/
+/****** Object:  StoredProcedure [dwd].[sp_StoreManagerHist]    Script Date: 18/1/2026 19:47:08 ******/
 SET ANSI_NULLS ON
 GO
-
 SET QUOTED_IDENTIFIER ON
 GO
 
 
 
-alter  PROCEDURE [dwd].[sp_StoreManagerHist]
+ALTER  PROCEDURE [dwd].[sp_StoreManagerHist]
 --WITH ENCRYPTION -- Agrega encriptación
 --06/03/2025: cambiamos a comercial preventas a entregar (/campo fecha PV por fewcha salida) 
 
@@ -70,10 +68,12 @@ create TABLE dwd.StoreManagerHist (
 	,Ubicacion varchar(100)
 	,fcNumero varchar(30)
 	,indicador nvarchar(100) --Este campo, se utiliza como filtro para el indicador a mostrar. Coincidira con el titulo de cada seccion. 
+	
 	,Motivo nvarchar(100)-- este campo contiene el motivo deuda detcash 
 	--,cheque nvarchar(100) --este campo contiene el motivo deuda detcash 
 	,IDFabrica varchar (15) 
 	,patente varchar(8)
+	
 
 
 );
@@ -127,12 +127,12 @@ LEFT OUTER JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
 	LEFT OUTER JOIN sta.SucursalesDeventa sdv ON ubi.SucursalDeVenta = sdv.Numero 
 
 WHERE 
-    U.UnidadTipo IN ('P', 'E')
+    U.UnidadTipo IN ('P', 'E','C') --17/1/2026 se agregan consignaciones, 'C'
     AND U.Asignada = 0
     AND U.Entregada = 0
     AND U.Preventa <> 'EGRESO DIRECTO'
     AND U.Preventa = '' 
-    AND U.ReservaCliente = ''
+    --AND U.ReservaCliente = '' --17/1/2026  se quita el filtro , hace que se incluyan las unidades reservadas
     AND UBI.Descripcion <> 'DEMOS'
     AND U.FechaDeRecepcion IS NULL;
 
@@ -177,12 +177,12 @@ INSERT INTO dwd.StoreManagerHist
     LEFT OUTER JOIN sta.Modelos MODL ON U.Modelo = MODL.Modelo
     LEFT OUTER JOIN sta.Origenes O ON MODL.Origen = O.OrigenID
 	LEFT OUTER JOIN sta.SucursalesDeventa sdv ON ubi.SucursalDeVenta = sdv.Numero 
-    WHERE U.UnidadTipo IN ('P', 'E')
+    WHERE U.UnidadTipo IN ('P', 'E','C') --17/1/2026 se agregan consignaciones, 'C'
       AND U.Asignada = 0
       AND U.Entregada = 0
       AND U.Preventa <> 'EGRESO DIRECTO'
       AND U.Preventa = ''
-      AND U.ReservaCliente = ''
+    --AND U.ReservaCliente = '' --17/1/2026  se quita el filtro , hace que se incluyan las unidades reservadas
       AND UBI.Descripcion <> 'DEMOS'
 	  and u.FechaDeRecepcion is not NULL 
 
@@ -637,6 +637,7 @@ INSERT INTO dwd.StoreManagerHist
     unidadTipo,
     --ubicacion, 
 	indicador,
+
 	idfabrica
 )
 SELECT
@@ -687,7 +688,8 @@ ON PV.TipoDeVentaID=TV.TipoVentaID
 
 LEFT OUTER JOIN sta.Origenes O 
 ON M.Origen = O.OrigenID
-WHERE PV.TipoPV='O' AND PV.Anulada=0 AND U.FechaPatentamiento IS NOT NULL
+WHERE PV.TipoPV='O' AND PV.Anulada=0 
+AND U.FechaPatentamiento IS NOT NULL --comentamos esta linea el 5 de enero de 2026
 
 
 
@@ -1332,6 +1334,8 @@ FROM
 
         WHERE 
     PV.Anulada=0 and PV.TipoDeVentaID <>2 --and DC.motivo in ('FINAN', 'FINANS') -- se podria agregar financiado como 'FP'
+
+	   AND PV.Fecha >= DATEADD(YEAR, -2, GETDATE())
 GROUP BY 
     DC.Referencia,DC.Motivo,SDV.Nombre,YEAR(PV.Fecha),MONTH(PV.Fecha), PV.Fecha, CLI.Nombre,M.DescripcionFormal,V.Nombre,PV.PrecioVenta,View_GXP.TotalGasto, PV.CotizacionDolar,COL.Descripcion,U.IDFabrica,PV.PrecioLista,F.Nombre,M.DescripcionOperativa
 HAVING 
@@ -1345,4 +1349,3 @@ HAVING
 --execute dwd.sp_storemanagerhist
 
 END;
-GO
