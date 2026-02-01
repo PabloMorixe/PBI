@@ -1,0 +1,78 @@
+USE [Tableros]
+GO
+
+/****** Object:  View [dwd].[vw_MontoAcumuladoVentasUsadosSAICAJA]    Script Date: 1/2/2026 11:21:17 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+CREATE VIEW [dwd].[vw_MontoAcumuladoVentasUsadosSAICAJA]
+AS
+
+				SELECT 
+				 YEAR(PV.Fecha) AS ANIO,
+				 MONTH(PV.Fecha) AS MES,
+				 --CONCAT (YEAR(PV.Fecha),'-',MONTH(PV.Fecha)) AS mesaño,
+				 CONCAT(YEAR(pv.Fecha), '-', RIGHT(CONCAT('0', MONTH(pv.Fecha)), 2)) AS mesaño,
+
+				 SDV.Nombre AS NombreSucursal,
+				 PV.Fecha AS FechaPV,
+				 PV.Numero as NumeroPV, 
+				 CLI.Nombre as clienteNombre,
+				 TV.Descripcion AS TipoVeh,
+				 USA.Marca,
+				 USA.Modelo,
+				 VEND.Nombre AS VendedorNOmbre,
+				 PV.PrecioVenta,
+				 CASE  
+				 WHEN View_GXP.TotalGasto is null then 0 
+				 ELSE View_GXP.TotalGasto
+				 END AS TotalGastosPV,
+				 CASE  
+				 WHEN View_GXP.TotalGasto is null then PV.PrecioVenta 
+				 ELSE (View_GXP.TotalGasto+PV.PrecioVenta)
+				 END AS TotalPV,
+				 PV.CotizacionDolar,
+				 USA.Color,
+				 USA.Patente,
+				 PV.PrecioSugerido,
+				 CASE
+				 WHEN USA.Consignacion = 1 THEN 'Consignacion'
+				 ELSE 'Propia'
+				 END AS TipoVentaUnidad
+				 ,usa.PrecioDeToma
+
+				 FROM SAI_CAJA..Preventas PV
+
+				LEFT OUTER JOIN SAI_CAJA..SucursalesDeventa SDV
+				ON SDV.Numero=PV.Sucursal
+
+				LEFT OUTER JOIN SAI_CAJA..Clientes CLI
+				ON CLI.Codigo=PV.Cliente
+
+				LEFT OUTER JOIN SAI_CAJA..Vendedores VEND
+				ON VEND.VendedorId=PV.VendedorID
+
+				LEFT OUTER JOIN SAI_CAJA..GastosPorPreventa View_GXP
+				ON View_GXP.PrevtaID=PV.PrevtaID
+
+				LEFT OUTER JOIN SAI_CAJA..USADOS USA
+				ON USA.Preventa=PV.Numero
+
+				LEFT OUTER JOIN SAI_CAJA..TiposVehiculos TV
+				ON TV.TipoVehiculoID=USA.TipoVehiculoID
+
+				WHERE PV.Anulada=0
+
+				and  PV.Tipopv = 'u'
+
+
+
+
+GO
+
+
