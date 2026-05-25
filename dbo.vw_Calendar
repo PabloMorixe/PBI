@@ -1,0 +1,15 @@
+CREATE VIEW [dbo].[vw_Calendar]
+AS
+SELECT DISTINCT AñoMes
+FROM dbo.calendar
+WHERE [Date] >= DATEFROMPARTS(
+                    YEAR(DATEADD(MONTH, -12, GETDATE())),
+                    MONTH(DATEADD(MONTH, -12, GETDATE())),
+                    1
+                )
+  AND [Date] < DATEFROMPARTS(
+                    YEAR(DATEADD(MONTH, 1, GETDATE())),
+                    MONTH(DATEADD(MONTH, 1, GETDATE())),
+                    1
+                );
+GO
