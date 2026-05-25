@@ -1,15 +1,17 @@
 USE [Tableros]
 GO
-/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI_PostVta]    Script Date: 18/1/2026 19:46:01 ******/
+/****** Object:  StoredProcedure [dwd].[sp_CalcularKPI_PostVta]    Script Date: 25/5/2026 12:10:51 ******/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
 
+
 ALTER PROCEDURE [dwd].[sp_CalcularKPI_PostVta]
 	--WITH ENCRYPTION -- Agrega encriptación
-	--17/04/2025
-	--
+  	--17/04/2025
+    --23ENE2026 : se agrega "and Fecha >= DATEADD(MONTH, -12, GETDATE()) -- 23ENE2026" para las fechas 
+
 AS
 BEGIN
 	SET NOCOUNT ON;-- SET NOCOUNT ON added to prevent extra result sets from
@@ -35,33 +37,29 @@ BEGIN
 
 	-----------------------------------------------------
 	--FIN  LOGG
-	-----------------------------------------------------nn
+	-----------------------------------------------------
+
+
+
 	-----------------------------------------------------
 	--Tabla de resultados
 	-----------------------------------------------------
+	
 	IF OBJECT_ID('tableros.dwd.KPI_PostVta', 'U') IS NOT NULL
 		DROP TABLE tableros.dwd.KPI_PostVta;
 
 	CREATE TABLE dwd.KPI_PostVta (
 		id INT IDENTITY(1, 1) PRIMARY KEY
-		,
-		fechaFactura DATETIME NULL
+		,fechaFactura DATETIME NULL
 		,fcNumero VARCHAR(100)
 		,PVNumero NVARCHAR(100)
-		,
-		fechaPV DATETIME NULL
-		,
-		Modelo NVARCHAR(255)
-		,
-		FechaCompraMostrador DATETIME
-		,
-		FacturaMostrador VARCHAR(100)
-		,
-		CodigoArticulo VARCHAR(100)
-		,
-		ArticuloDescripcion VARCHAR(100)
-		,
-		mesaño NVARCHAR(7)
+		,fechaPV DATETIME NULL
+		,Modelo NVARCHAR(255)
+		,FechaCompraMostrador DATETIME
+		,FacturaMostrador VARCHAR(100)
+		,CodigoArticulo VARCHAR(100)
+		,ArticuloDescripcion VARCHAR(100)
+		,mesaño NVARCHAR(7)
 		,FechaRecibo DATETIME
 		,FormaDePago VARCHAR(100)
 		,CobranzaNro VARCHAR(100)
@@ -69,11 +67,9 @@ BEGIN
 		,Repuesto VARCHAR(200)
 		,sucursalNombre NVARCHAR(200)
 		,precioUnitario FLOAT
-		,--creae
-		importe FLOAT
+		,importe FLOAT
 		,referencia NVARCHAR(MAX)
-		,--campo de notas manuales 
-		descripcionOperativa VARCHAR(200)
+		,descripcionOperativa VARCHAR(200)
 		,indicadorKPI NVARCHAR(200)
 		,KPIValue FLOAT
 		,KPIValueNvarchar nvarchar(100)
@@ -88,11 +84,9 @@ BEGIN
 		,SucursalOrden VARCHAR(100)
 		,FechaApertura DATETIME
 		,FechaCierre DATETIME
-		,indicador NVARCHAR(50)
 		,cargo VARCHAR(100)
-		,
-		cargoDescripcion varchar(100),
-		tipoCargo VARCHAR(100)
+		,cargoDescripcion varchar(100)
+		,tipoCargo VARCHAR(100)
 		,tipoCargoDescripcion VARCHAR(100)
 		,gruposCodigo VARCHAR(100)
 		,gruposCodigoDescripcion VARCHAR(100)
@@ -104,17 +98,23 @@ BEGIN
 		,FechaPrimerService DATETIME
 		,FechaUltimoService DATETIME
 		,Dias_Venta_a_PrimerService INT
-		,NumeroOrden int,
-		Cantidad_Total_Visitas int
-			,Dias_Retencion_Cliente int 
+		,NumeroOrden int
+		,Cantidad_Total_Visitas int
+		,Dias_Retencion_Cliente int 
 		,Dias_Desde_Ult_Servicio int 
-		,unidadtipo varchar(20),
-		OrdenDeServicio NVARCHAR(100)
+		,unidadtipo varchar(20)
+		,OrdenDeServicio NVARCHAR(100)
 		);
 
-	----KPI_PostVta_A_FormaDePago
-	---------------------
-	---------------------
+
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+----KPI_PostVta_A_FormaDePago
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+
 	--SELECT * FROM dwd.KPI_PostVta WHERE indicadorKPI = 'ComA&I'
 	INSERT INTO dwd.KPI_PostVta (
 		-- Fechas
@@ -165,206 +165,232 @@ BEGIN
 	LEFT OUTER JOIN sta.CentrosDeCostos CC ON CC.CentroID = C.CentroDeCosto
 	LEFT OUTER JOIN sta.SucursalesContables SC ON C.Sucursal = SC.Numero
 	LEFT JOIN sta.SucursalesDeventa SDV ON SDV.SucursalContableRepuestos = SC.Numero
-	WHERE C.Origen = 'VTREP';
+	WHERE C.Origen = 'VTREP'
+	and c.Fecha >= DATEADD(MONTH, -12, GETDATE()) -- 23ENE2026" para las fechas 
+
+	
 	
 
-	-----------------------------------------------------
-	--KPI_PostVta_B-41 EX A2--------------------------------------------------- ACont-LeadTime-fechafacturaRepuestosVsSaldocero
-	--COMPLETA V1
-	SELECT *
-	FROM dwd.KPI_PostVta
-	WHERE indicadorKPI = 'ACont-LeadTime-fechafacturaRepuestosVsSaldocero'
 
-	IF OBJECT_ID('tempdb..#DetCashResumen') IS NOT NULL
-		DROP TABLE #DetCashResumen;
-			-------------------
-			;
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--KPI_PostVta_B-41 EX A2------- ACont-LeadTime-fechafacturaRepuestosVsSaldocero
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
 
-	WITH Grupos
-	AS (
-		SELECT CashID
-			,CobranzaNro
-			,MIN(CASE 
-					WHEN Origen = 'VTREP'
-						THEN Fecha
-					END) AS FechaFactura
-			,MAX(CASE 
-					WHEN Origen = 'RC'
-						THEN Fecha
-					END) AS FechaRecibo
-			,SUM(Importe) AS ImporteTotal
-			,SUM(CASE 
-					WHEN Origen = 'VTREP'
-						THEN 1
-					ELSE 0
-					END) AS CantFacturas
-			,SUM(CASE 
-					WHEN Origen = 'RC'
-						THEN 1
-					ELSE 0
-					END) AS CantRecibos
-		FROM sta.DetCash
-		WHERE Origen IN (
-				'VTREP'
-				,'RC'
-				)
-		GROUP BY CobranzaNro
-			,CashID
-		HAVING SUM(CASE 
-					WHEN Origen = 'VTREP'
-						THEN 1
-					ELSE 0
-					END) >= 1
-			AND SUM(CASE 
-					WHEN Origen = 'RC'
-						THEN 1
-					ELSE 0
-					END) >= 1
-			AND ABS(SUM(Importe)) < 1
-		)
-	SELECT dc.*
-		,g.FechaFactura
-		,g.FechaRecibo
-		,DATEDIFF(DAY, g.FechaFactura, g.FechaRecibo) AS DiasEntreFacturaYUltimoRecibo
-		,g.ImporteTotal
-	INTO #DetCashResumen
-	FROM sta.DetCash dc
-	JOIN Grupos g ON dc.CashID = g.CashID
-		AND dc.CobranzaNro = g.CobranzaNro
-	WHERE dc.Origen IN (
-			'VTREP'
-			,'RC'
-			);
+	
 
-	-------------------
-	IF OBJECT_ID('tempdb..#DetCashResumenAgrupado') IS NOT NULL
-		DROP TABLE #DetCashResumenAgrupado;
+					IF OBJECT_ID('tempdb..#DetCashResumen') IS NOT NULL
+						DROP TABLE #DetCashResumen;
+			
+							;
 
-	-------------------
-	SELECT dcr.CobranzaNro
-		,dcr.Referencia
-		,MIN(dcr.FechaFactura) AS FechaFactura
-		,MAX(dcr.FechaRecibo) AS FechaRecibo
-		,MIN(dcr.DiasEntreFacturaYUltimoRecibo) AS DiasEntreFacturaYUltimoRecibo
-		,SUM(dcr.Importe) AS ImporteTotalGrupo
-	INTO #DetCashResumenAgrupado
-	FROM #DetCashResumen dcr
-	WHERE dcr.CobranzaNro <> ''
-	-- AND dcr.Referencia LIKE 'TR0000000001'
-	GROUP BY dcr.CobranzaNro
-		,dcr.Referencia;
+					WITH Grupos
+					AS (
+						SELECT CashID
+							,CobranzaNro
+							,MIN(CASE 
+									WHEN Origen = 'VTREP'
+										THEN Fecha
+									END) AS FechaFactura
+							,MAX(CASE 
+									WHEN Origen = 'RC'
+										THEN Fecha
+									END) AS FechaRecibo
+							,SUM(Importe) AS ImporteTotal
+							,SUM(CASE 
+									WHEN Origen = 'VTREP'
+										THEN 1
+									ELSE 0
+									END) AS CantFacturas
+							,SUM(CASE 
+									WHEN Origen = 'RC'
+										THEN 1
+									ELSE 0
+									END) AS CantRecibos
+						FROM sta.DetCash
+						WHERE Origen IN (
+								'VTREP'
+								,'RC'
+								)
+						GROUP BY CobranzaNro
+							,CashID
+						HAVING SUM(CASE 
+									WHEN Origen = 'VTREP'
+										THEN 1
+									ELSE 0
+									END) >= 1
+							AND SUM(CASE 
+									WHEN Origen = 'RC'
+										THEN 1
+									ELSE 0
+									END) >= 1
+							AND ABS(SUM(Importe)) < 1
+						)
+					SELECT dc.*
+						,g.FechaFactura
+						,g.FechaRecibo
+						,DATEDIFF(DAY, g.FechaFactura, g.FechaRecibo) AS DiasEntreFacturaYUltimoRecibo
+						,g.ImporteTotal
+					INTO #DetCashResumen
+					FROM sta.DetCash dc
+					JOIN Grupos g ON dc.CashID = g.CashID
+						AND dc.CobranzaNro = g.CobranzaNro
+					WHERE dc.Origen IN (
+							'VTREP'
+							,'RC'
+							)
+					and dc.Fecha >= DATEADD(MONTH, -12, GETDATE()) -- 23ENE2026" para las fechas 
 
-	SELECT *
-	FROM #DetCashResumenAgrupado
 
-	-------------------
-	-------------------------------------------
-	INSERT INTO dwd.KPI_PostVta (
-		fechaFactura
-		,FechaRecibo
-		,mesaño
-		,sucursalNombre
-		,
-		--IDFabrica,
-		--patente,
-		--ClienteNombre,
-		--Modelo,
-		--importe,
-		cobranzaNro
-		,referencia
-		,-- campo de notas manuales 
-		--origen,       -- sale de o.Nombre como marca
-		--descripcionOperativa,
-		--color,
-		--unidadTipo,
-		--Ubicacion,
-		--fcNumero,
-		cashid
-		,indicadorKPI
-		,KPIValue -- cálculo del lead time
-		)
-	SELECT dca.FechaFactura
-		,dca.FechaRecibo
-		,CONCAT (
-			YEAR(dca.FechaRecibo)
-			,'-'
-			,RIGHT(CONCAT (
-					'0'
-					,MONTH(dca.FechaRecibo)
-					), 2)
-			) AS mesaño
-		,-- <== aquí la lógica
-		SCSV.sucursalVentaNombre
-		,dca.CobranzaNro
-		,dca.Referencia
-		,cashID
-		,'ACont-LeadTime-fechafacturaRepuestosVsSaldocero'
-		,dca.DiasEntreFacturaYUltimoRecibo
-	FROM #DetCashResumenAgrupado dca
-	LEFT JOIN sta.DetCash dc ON dca.Referencia = dc.Referencia
-		AND dca.CobranzaNro = dc.CobranzaNro
-	LEFT JOIN sta.Recibos Rec ON Rec.[control] = dc.[Control]
-	LEFT JOIN dwd.SucContableSucVenta SCSV ON rec.Sucursal = SCSV.SucContableNro
-	WHERE dc.Comprobante LIKE 'RC%'
+					-----------------------------------------------------------------------------------------------
+					IF OBJECT_ID('tempdb..#DetCashResumenAgrupado') IS NOT NULL
+						DROP TABLE #DetCashResumenAgrupado;
 
-	--and  dca.referencia = 'TR0000000001'
-	--and dc.Comprobante like 'RC%'
-	--				and ( select 
-	--sdv.Nombre 
-	--from sta.sucursalesdeventa sdv
-	--where rec.Sucursal = sdv.numero
-	--) is not null
-	--select * from dwd.KPI_PostVta  where indicadorKPI = 'ACont-LeadTime-fechafacturaRepuestosVsSaldocero'
-	--and referencia = 'TR0000000001'
-	--select * from sta.sucursalesdeventa
-	-------------------------------------------------------
-	--KPI_PostVenta_C-VtaXTipoFamiliaProducto =  Venta por tipo producto: Porcentaje venta por familia de producto: Repuesto / Accesorio / Indumentaria / Etc
+					
+					SELECT dcr.CobranzaNro
+						,dcr.Referencia
+						,MIN(dcr.FechaFactura) AS FechaFactura
+						,MAX(dcr.FechaRecibo) AS FechaRecibo
+						,MIN(dcr.DiasEntreFacturaYUltimoRecibo) AS DiasEntreFacturaYUltimoRecibo
+						,SUM(dcr.Importe) AS ImporteTotalGrupo
+					INTO #DetCashResumenAgrupado
+					FROM #DetCashResumen dcr
+					WHERE dcr.CobranzaNro <> ''
+					-- AND dcr.Referencia LIKE 'TR0000000001'
+					GROUP BY dcr.CobranzaNro
+						,dcr.Referencia;
+
+					--SELECT * ROM #DetCashResumenAgrupado
+
+					
+					---------------------------------------------------------------------------------------------------------------------------------
+					INSERT INTO dwd.KPI_PostVta (
+						fechaFactura
+						,FechaRecibo
+						,mesaño
+						,sucursalNombre
+						,
+						--IDFabrica,
+						--patente,
+						--ClienteNombre,
+						--Modelo,
+						--importe,
+						cobranzaNro
+						,referencia
+						,-- campo de notas manuales 
+						--origen,       -- sale de o.Nombre como marca
+						--descripcionOperativa,
+						--color,
+						--unidadTipo,
+						--Ubicacion,
+						--fcNumero,
+						cashid
+						,indicadorKPI
+						,KPIValue -- cálculo del lead time
+						)
+					SELECT dca.FechaFactura
+						,dca.FechaRecibo
+						,CONCAT (
+							YEAR(dca.FechaRecibo)
+							,'-'
+							,RIGHT(CONCAT (
+									'0'
+									,MONTH(dca.FechaRecibo)
+									), 2)
+							) AS mesaño
+						,-- <== aquí la lógica
+						SCSV.sucursalVentaNombre
+						,dca.CobranzaNro
+						,dca.Referencia
+						,cashID
+						,'ACont-LeadTime-fechafacturaRepuestosVsSaldocero'
+						,dca.DiasEntreFacturaYUltimoRecibo
+					FROM #DetCashResumenAgrupado dca
+					LEFT JOIN sta.DetCash dc ON dca.Referencia = dc.Referencia
+						AND dca.CobranzaNro = dc.CobranzaNro
+					LEFT JOIN sta.Recibos Rec ON Rec.[control] = dc.[Control]
+					LEFT JOIN dwd.SucContableSucVenta SCSV ON rec.Sucursal = SCSV.SucContableNro
+					WHERE dc.Comprobante LIKE 'RC%'
+						
+						
+						
+						
+						--and c.Fecha >= DATEADD(MONTH, -12, GETDATE()) -- 23ENE2026" para las fechas 
+
+
+
+
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--KPI_PostVenta_C-VtaXTipoFamiliaProducto =  Venta por tipo producto: Porcentaje venta por familia de producto: Repuesto / Accesorio / Indumentaria / Etc
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+
 	SELECT *
 	FROM dwd.KPI_PostVta
 	WHERE indicadorKPI = 'VtaXTipoFamiliaProducto'
 
-	INSERT INTO dwd.KPI_PostVta (
-		fechaFactura
-		,fcnumero
-		,mesaño
-		,Repuesto
-		,sucursalNombre
-		,importe
-		,ClienteNombre
-		,descripcionOperativa
-		,cantidad
-		,familia
-		,indicadorKPI
-		)
-	SELECT KTR.Fecha
-		,KTR.Documento --FC NUMERO
-		,CONCAT (
-			YEAR(KTR.Fecha)
-			,'-'
-			,RIGHT(CONCAT (
-					'0'
-					,MONTH(KTR.Fecha)
-					), 2)
-			) AS mesaño
-		,KTR.Repuesto
-		,SDV.Nombre SucursalNombre
-		,KTR.Precio
-		,CLI.Nombre
-		,REPLACE(REPLACE(REP.Descripcion, CHAR(13), ''), CHAR(10), '') AS Descripcion
-		,KTR.Cantidad
-		,rep.Familia
-		,'VtaXTipoFamiliaProducto'
-	FROM sta.KardexTR KTR
-	LEFT OUTER JOIN sta.SucursalesDeventa SDV ON KTR.Sucursal = SDV.Numero
-	LEFT OUTER JOIN sta.Clientes CLI ON KTR.Referencia = CLI.Codigo
-	LEFT OUTER JOIN sta.Repuestos REP ON KTR.Repuesto = REP.Codigo
-		AND KTR.GestionID = REP.GestionID
-	WHERE (SUBSTRING(KTR.Documento, 1, 2) = 'FC')
-		AND KTR.Tipo = 'E'
+					INSERT INTO dwd.KPI_PostVta (
+						fechaFactura
+						,fcnumero
+						,mesaño
+						,Repuesto
+						,sucursalNombre
+						,importe
+						,ClienteNombre
+						,descripcionOperativa
+						,cantidad
+						,familia
+						,indicadorKPI
+						)
+					SELECT KTR.Fecha
+						,KTR.Documento --FC NUMERO
+						,CONCAT (
+							YEAR(KTR.Fecha)
+							,'-'
+							,RIGHT(CONCAT (
+									'0'
+									,MONTH(KTR.Fecha)
+									), 2)
+							) AS mesaño
+						,KTR.Repuesto
+						,SDV.Nombre SucursalNombre
+						,KTR.Precio
+						,CLI.Nombre
+						,REPLACE(REPLACE(REP.Descripcion, CHAR(13), ''), CHAR(10), '') AS Descripcion
+						,KTR.Cantidad
+						,rep.Familia
+						,'VtaXTipoFamiliaProducto'
+					FROM sta.KardexTR KTR
+					LEFT OUTER JOIN sta.SucursalesDeventa SDV ON KTR.Sucursal = SDV.Numero
+					LEFT OUTER JOIN sta.Clientes CLI ON KTR.Referencia = CLI.Codigo
+					LEFT OUTER JOIN sta.Repuestos REP ON KTR.Repuesto = REP.Codigo
+						AND KTR.GestionID = REP.GestionID
+					WHERE (SUBSTRING(KTR.Documento, 1, 2) = 'FC')
+						AND KTR.Tipo = 'E'
 
-	-----------------------------------------
-	--KPI_PostVenta_D_VtaFIsicaVSVtaOnline
-	--	select * from dwd.kpi_postvta where indicadorKPI = 'KPI_PostVenta_D_VtaFIsicaVSVtaOnline'
+						and ktr.Fecha >= DATEADD(MONTH, -12, GETDATE()) -- 23ENE2026" para las fechas 
+
+
+						
+
+
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--KPI_PostVenta_D_VtaFIsicaVSVtaOnline
+--	select * from dwd.kpi_postvta where indicadorKPI = 'KPI_PostVenta_D_VtaFIsicaVSVtaOnline'
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+
+
+
 	INSERT INTO dwd.KPI_PostVta (
 		fechaFactura
 		,fcnumero
@@ -418,83 +444,198 @@ BEGIN
 			END AS KPIValue
 	FROM sta.Comprobantes C
 	LEFT OUTER JOIN [dwd].[SucContableSucVenta] scsv ON c.Sucursal = scsv.SucContableNro
-	WHERE C.Origen = 'VTREP';
-
-	---------------------------------------------
-	--KPI_PostVenta_E_LeadTImeOrdenesCerradasXCargo --KPI51 
-	--select * from dwd.KPI_PostVta where indicadorKPI = 'LeadTImeOrdenesCerradasXCargo'
-	INSERT INTO dwd.KPI_PostVta (
-		FechaApertura
-		,FechaCierre
-		,mesaño
-		,sucursalNombre
-		,SucursalOrden
-		,tipoCargo
-		,tipoCargoDescripcion
-		,gruposCodigo
-		,gruposCodigoDescripcion
-		,KPIValue
-		,indicadorKPI
+	WHERE C.Origen = 'VTREP'
+	and c.Fecha >= DATEADD(MONTH, -12, GETDATE()) -- 23ENE2026" para las fechas 
 
 
-		)
-	SELECT SO.Apertura AS FechaApertura
-		,SO.Cierre AS FechaCierre
-		,CONCAT (
-			YEAR(SO.Cierre)
-			,'-'
-			,RIGHT(CONCAT (
-					'0'
-					,MONTH(SO.Cierre)
-					), 2)
-			) AS mesaño
-		,-- asumimos que se usa fecha de cierre de la orden
-		SDV.Nombre AS sucursalNombre
-		,CONCAT (
-			RIGHT(CONCAT (
-					'0'
-					,SO.SucursalContable
-					), 2)
-			,' - '
-			,SO.NumeroOrden
-			) AS SucursalOrden
-		,
-		--CAR.TipodeCargo               AS Cargo,  
-		car.Tipodecargo AS tipoCargo
-		,car.Descripcion AS tipoCargoDescripcion
-		,g.codigo AS gruposCodigo
-		,g.Descripcion AS gruposCodigoDescripcion
-		--,DATEDIFF(DAY, SO.Apertura, SO.Cierre) AS KPIValue
-		 ,   CASE 
+
+
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--KPI_PostVenta_E_LeadTImeOrdenesCerradasXCargo --KPI50  KPI51 
+--select * from dwd.KPI_PostVta where indicadorKPI = 'LeadTImeOrdenesCerradasXCargo'
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+
+  -- Actualización: Se integra el importe de facturación (FC - NC) por cada Orden de Servicio.
+
+
+-- 1. Definimos la suma de importes por Orden para evitar duplicados en el JOIN principal
+;WITH ImportesPorOrden AS (
+    SELECT 
+        SODF.NumeroOrden,
+        SODF.SucursalContable,
+        SUM(CASE 
+                WHEN C.Documento = 'NC' THEN C.Total * -1 
+                ELSE C.Total 
+            END) AS ImporteTotal
+    FROM sta.ServiciosOrdenesDetalleFacturacion SODF WITH (NOLOCK)
+    INNER JOIN sta.Comprobantes C WITH (NOLOCK) ON SODF.ComprobanteId = C.ComprobanteID
+    WHERE C.Origen = 'VTSER'
+    GROUP BY SODF.NumeroOrden, SODF.SucursalContable
+)
+INSERT INTO dwd.KPI_PostVta (
+    FechaApertura,
+    FechaCierre,
+    mesaño,
+    sucursalNombre,
+    SucursalOrden,
+    tipoCargo,
+    tipoCargoDescripcion,
+    gruposCodigo,
+    gruposCodigoDescripcion,
+    KPIValue,
+    indicadorKPI,
+    importe -- Nueva columna integrada
+)
+SELECT
+    SO.Apertura AS FechaApertura,
+    SO.Cierre AS FechaCierre,
+    CONCAT(YEAR(SO.Apertura), '-', RIGHT(CONCAT('0', MONTH(SO.Apertura)), 2)) AS mesaño,
+    SDV.Nombre AS sucursalNombre,
+    CONCAT(RIGHT(CONCAT('0', SO.SucursalContable), 2), ' - ', SO.NumeroOrden) AS SucursalOrden,
+    CAR.Tipodecargo AS tipoCargo,
+    CAR.Descripcion AS tipoCargoDescripcion,
+    G.Codigo AS gruposCodigo,
+    G.Descripcion AS gruposCodigoDescripcion,
+    CASE 
         WHEN DATEDIFF(DAY, SO.Apertura, SO.Cierre) = 0 THEN 1
         ELSE DATEDIFF(DAY, SO.Apertura, SO.Cierre)
-    END                           AS KPIValue
-		,'LeadTImeOrdenesCerradasXCargo' AS indicadorKPI
-	FROM sta.ServiciosOrdenes SO
-	LEFT JOIN sta.Cargos CAR ON SO.Cargo = CAR.Codigo
-	LEFT JOIN sta.SucursalesDeVenta SDV ON SO.SucursalContable = SDV.Numero
-	LEFT JOIN sai..Grupos G ON SO.Grupo = G.Codigo
-	WHERE
-		-- Se valida que no sean NULL y tampoco vacías ('')
-		(
-			SO.Apertura IS NOT NULL
-			AND SO.Apertura <> ''
-			)
-		AND (
-			SO.Cierre IS NOT NULL
-			AND SO.Cierre <> ''
-			)
-		-- Validación de Cargo existente
-		AND (
-			SO.Cargo IS NOT NULL
-			AND SO.Cargo <> ''
-			)
+    END AS KPIValue,
+    'LeadTImeOrdenesCerradasXCargo' AS indicadorKPI,
+    ISNULL(IPO.ImporteTotal, 0) AS importe
+FROM sta.ServiciosOrdenes SO WITH (NOLOCK)
+LEFT JOIN sta.Cargos CAR WITH (NOLOCK) 
+    ON SO.Cargo = CAR.Codigo
+LEFT JOIN sta.SucursalesDeVenta SDV WITH (NOLOCK) 
+    ON SO.SucursalContable = SDV.Numero
+LEFT JOIN sai..Grupos G WITH (NOLOCK) 
+    ON SO.Grupo = G.Codigo
+LEFT JOIN ImportesPorOrden IPO 
+    ON SO.NumeroOrden = IPO.NumeroOrden 
+    AND SO.SucursalContable = IPO.SucursalContable
+WHERE
+    -- Filtros de integridad de datos
+    (SO.Apertura IS NOT NULL AND SO.Apertura <> '')
+    AND (SO.Cierre IS NOT NULL AND SO.Cierre <> '')
+    AND (SO.Cargo IS NOT NULL AND SO.Cargo <> '')
+    -- Regla de Negocio: Solo órdenes cerradas para LeadTime
+    AND SO.Cierre IS NOT NULL
+
+	AND SO.Apertura >= DATEFROMPARTS(
+                            YEAR(DATEADD(MONTH, -12, GETDATE())),
+                            MONTH(DATEADD(MONTH, -12, GETDATE())),
+                            1
+                        )
+    AND SO.Apertura < DATEFROMPARTS(
+                            YEAR(DATEADD(MONTH, 1, GETDATE())),
+                            MONTH(DATEADD(MONTH, 1, GETDATE())),
+                            1
+                        );
+
+
+
+
+
+		/* query para origenes de datos 
+	select 
+	 FechaApertura,
+    FechaCierre,
+    mesaño,
+    sucursalNombre,
+    SucursalOrden,
+    tipoCargo,
+    tipoCargoDescripcion,
+    gruposCodigo,
+    gruposCodigoDescripcion,
+    KPIValue,
+    indicadorKPI,
+    importe 
+
+	from dwd.KPI_PostVta
+	where indicadorkpi ='LeadTImeOrdenesCerradasXCargo'
+	*/
+
+
+	--INSERT INTO dwd.KPI_PostVta (
+	--	FechaApertura
+	--	,FechaCierre
+	--	,mesaño
+	--	,sucursalNombre
+	--	,SucursalOrden
+	--	,tipoCargo
+	--	,tipoCargoDescripcion
+	--	,gruposCodigo
+	--	,gruposCodigoDescripcion
+	--	,KPIValue
+	--	,indicadorKPI
+
+
+	--	)
+	--SELECT SO.Apertura AS FechaApertura
+	--	,SO.Cierre AS FechaCierre
+	--	,CONCAT (
+	--		YEAR(SO.Cierre)
+	--		,'-'
+	--		,RIGHT(CONCAT (
+	--				'0'
+	--				,MONTH(SO.Cierre)
+	--				), 2)
+	--		) AS mesaño
+	--	,-- asumimos que se usa fecha de cierre de la orden
+	--	SDV.Nombre AS sucursalNombre
+	--	,CONCAT (
+	--		RIGHT(CONCAT (
+	--				'0'
+	--				,SO.SucursalContable
+	--				), 2)
+	--		,' - '
+	--		,SO.NumeroOrden
+	--		) AS SucursalOrden
+	--	,
+	--	--CAR.TipodeCargo               AS Cargo,  
+	--	car.Tipodecargo AS tipoCargo
+	--	,car.Descripcion AS tipoCargoDescripcion
+	--	,g.codigo AS gruposCodigo
+	--	,g.Descripcion AS gruposCodigoDescripcion
+	--	--,DATEDIFF(DAY, SO.Apertura, SO.Cierre) AS KPIValue
+	--	 ,   CASE 
+ --       WHEN DATEDIFF(DAY, SO.Apertura, SO.Cierre) = 0 THEN 1
+ --       ELSE DATEDIFF(DAY, SO.Apertura, SO.Cierre)
+ --   END                           AS KPIValue
+	--	,'LeadTImeOrdenesCerradasXCargo' AS indicadorKPI
+	--FROM sta.ServiciosOrdenes SO
+	--LEFT JOIN sta.Cargos CAR ON SO.Cargo = CAR.Codigo
+	--LEFT JOIN sta.SucursalesDeVenta SDV ON SO.SucursalContable = SDV.Numero
+	--LEFT JOIN sai..Grupos G ON SO.Grupo = G.Codigo
+	--WHERE
+	--	-- Se valida que no sean NULL y tampoco vacías ('')
+	--	(
+	--		SO.Apertura IS NOT NULL
+	--		AND SO.Apertura <> ''
+	--		)
+	--	AND (
+	--		SO.Cierre IS NOT NULL
+	--		AND SO.Cierre <> ''
+	--		)
+	--	-- Validación de Cargo existente
+	--	AND (
+	--		SO.Cargo IS NOT NULL
+	--		AND SO.Cargo <> ''
+	--		)
 			  
-	--------------------------------------------------------
-	--#ID15 ----------------------------------------------------- 'Preventas0KM+Accesorios' 
-	--KPI15 
-	/* Clientes con Preventa 0km que LUEGO compraron accesorios por mostrador.
-*/
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--#ID15 ----------------------------------------------------- 'Preventas0KM+Accesorios' 
+--KPI15 
+/* Clientes con Preventa 0km que LUEGO compraron accesorios por mostrador.*/
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+
 	--select * from dwd.KPI_PostVta where indicadorKPI = 'Preventas0KM+Accesorios'
 	------------------------------------------------------------
 	-- 1) Temp: Ventas de mostrador agrupadas por FACTURA
@@ -519,6 +660,8 @@ BEGIN
 			,'GADGET'
 			,'ITEM'
 			)
+			and ktr.Fecha >= DATEADD(MONTH, -12, GETDATE()) -- 23ENE2026" para las fechas 
+
 	GROUP BY KTR.Referencia
 		,KTR.Documento
 		,KTR.Fecha;
@@ -571,7 +714,9 @@ BEGIN
 		AND VM.Fecha > PV.Fecha
 		AND VM.Fecha <= DATEADD(DAY, 60, PV.Fecha)
 	WHERE PV.TipoPV = 'O'
-		AND PV.Anulada = 0;
+		AND PV.Anulada = 0
+		and pv.Fecha >= DATEADD(MONTH, -12, GETDATE()) -- 23ENE2026" para las fechas 
+
 
 	INSERT INTO dwd.KPI_PostVta (
 		ClienteCodigo
@@ -585,7 +730,8 @@ BEGIN
 		,importe
 		,indicadorKPI
 		,KPIValue         -- Días desde la venta del auto
-		,indicador        -- Aquí va el flag de Retenido/NoFidelizado
+		,KPIValueNvarchar
+		--,indicador        -- Aquí va el flag de Retenido/NoFidelizado
 		)
 	SELECT 
 		codigo
@@ -608,41 +754,28 @@ BEGIN
 		,CASE 
 			WHEN fechacomprapost IS NOT NULL THEN 'PV_C/VtaAccesorios'
 			ELSE 'PV_S/VtaAccesorios'
-		 END AS indicador
-	FROM #ResultadoPostVenta60d
+		 END AS KPIValueNvarchar --indicador
+	FROM #ResultadoPostVenta60d r
+	where r.FechaVentaAuto >= DATEADD(MONTH, -12, GETDATE()) -- 23ENE2026" para las fechas 
 
-	select * from sta.unidades
-
-
-
-	SELECT * FROM dwd.KPI_PostVta WHERE indicadorKPI = 'Preventas0KM+Accesorios';
+	--select * from sta.unidades
 
 
 
+	--SELECT * FROM dwd.KPI_PostVta WHERE indicadorKPI = 'Preventas0KM+Accesorios';
 
 
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+/* KPI54 y KPI55: Tasa de Retención de Clientes (Cliente Comprador -> Cliente Servicio) */
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
 
-
-
-
-
-
-
-
-
-
-
-
-	--------------------------------------------------------------
-	---- 3) Select final
-	--------------------------------------------------------------
-	--SELECT *
-	--FROM #ResultadoPostVenta60d
-	--ORDER BY FechaVentaAuto DESC;
-	-----------------------------------------------------------------------------------
-	/* KPI54 y KPI55: Tasa de Retención de Clientes (Cliente Comprador -> Cliente Servicio) */
 INSERT INTO dwd.KPI_PostVta (
-    patente
+    mesaño
+    ,patente
     ,Modelo
     ,unidadID
     ,PVNumero
@@ -650,36 +783,40 @@ INSERT INTO dwd.KPI_PostVta (
     ,sucursalNombre
     ,Marca
     ,color
+	,fechaPV
     ,FechaSalida
     ,FechaPrimerService
     ,FechaUltimoService
     ,Dias_Venta_a_PrimerService
-    ,indicador -- Nombre real según la definición de la tabla en el SP
-	,Dias_Retencion_Cliente
-    ,indicadorKPI
+    ,KPIValueNvarchar   -- 'Fidelizado' / 'NoFidelizado'
+    ,Dias_Retencion_Cliente
+    ,indicadorKPI       -- 'TasaRetencionClientes'
 )
 SELECT
-    ISNULL(NULLIF(U.Patente, ''), 'A PATENTAR')
+    CONCAT(YEAR(pv.Fecha), '-', RIGHT(CONCAT('0', MONTH(pv.Fecha)), 2)) AS añomes--revisar
+	
+    ,ISNULL(NULLIF(U.Patente, ''), 'A PATENTAR') as Patente
     ,U.Modelo
     ,U.UnidadID
-    ,PV.Numero
-    ,CLI.Nombre
-    ,SDV.Nombre
-    ,O.Nombre
-    ,COL.Descripcion
+	,PV.Numero
+    ,CLI.Nombre as ClienteNombre
+    ,SDV.Nombre as nombreSucursal
+    ,O.Nombre as Marca
+    ,COL.Descripcion as Color
+	,PV.Fecha as FechaPV
     ,U.FechaSalida
     ,Srv.FechaPrimerService
     ,Srv.FechaUltimoService
-    ,DATEDIFF(DAY, U.FechaSalida, Srv.FechaPrimerService)
+    ,DATEDIFF(DAY, U.FechaSalida, Srv.FechaPrimerService) as diasFSalida_A_PrimerServicio
     -- Lógica de Fidelización (Últimos 12 meses) -- 17/01/2026 ya no aplica esta logica.  se comenta para tomar como cliente retenido, si efectivamente tiene una fecga de ultimo service
     ,CASE 
         WHEN Srv.FechaUltimoService IS NOT NULL 
             -- AND Srv.FechaUltimoService >= DATEADD(MONTH, -12, GETDATE()) --17/01/2026 se comenta para tomar como cliente retenido, si efectivamente tiene una fecga de ultimo service
-             THEN 'ClienteRetenido'
+             THEN 'Fidelizado'
         ELSE 'NoFidelizado'
-    END
+    END as EstadoCliente
 	,-- Días transcurridos como cliente (Desde el 1er service hasta el último)
-ISNULL(DATEDIFF(DAY, Srv.FechaPrimerService, Srv.FechaUltimoService), 0) AS Dias_Retencion_Cliente
+ISNULL(DATEDIFF(DAY, Srv.FechaPrimerService, Srv.FechaUltimoService), 0) AS Dias_desde_Primer_a_Ultimo_Service
     ,'TasaRetencionClientes'
 
 FROM sta.Unidades U WITH (NOLOCK)
@@ -701,21 +838,48 @@ OUTER APPLY (
       AND SO.Cierre IS NOT NULL
       AND C.TipodeCargo = 'Cliente'
       AND SO.Apertura >= U.FechaSalida -- Exclusión de PDI
+	  --  select * from sta.serviciosordenes
 ) AS Srv
 
 WHERE U.FechaSalida IS NOT NULL 
-    AND U.UnidadTipo IN ('P','E') 
-    AND PV.TipoPV = 'O' 
-    AND PV.Anulada = 0;
+    AND U.UnidadTipo IN ('P','E')
+    AND PV.TipoPV = 'O'
+    AND PV.Anulada = 0
+	--AND YEAR(pv.Fecha)=2026 and MONTH(pv.Fecha)=3
+	--and pv.Fecha >= DATEADD(MONTH, -12, GETDATE()) -- 23ENE2026" para las fechas
 
+	/* Query para el tablero 
+SELECT 
+    mesaño,
+    patente,
+    Modelo,
+    unidadID,
+    PVNumero,
+    ClienteNombre,
+    sucursalNombre,
+    Marca,
+    color,
+	FechaPV,
+    FechaSalida,
+    FechaPrimerService,
+    FechaUltimoService,
+    -- Métricas de tiempo
+    Dias_Venta_a_PrimerService,
+    Dias_Retencion_Cliente,
+    -- Clasificación
+    KPIValueNvarchar AS EstadoFidelizacion,
+    indicadorKPI
+FROM dwd.KPI_PostVta WITH (NOLOCK)
+WHERE indicadorKPI = 'TasaRetencionClientes'
+	*/ 
 
-			select * from dwd.KPI_PostVta where indicadorKPI = 'TasaRetencionClientes'
-
-
-
-------------------------------------------------------------------------------------------------------------------------------------
-
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
 /* KPI56-PromedioPermanenciaDiasClientesCaptados = query kpi57 */
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
 
 ;wiTH MetricasVehiculo AS (
     SELECT 
@@ -775,6 +939,8 @@ WHERE U.FechaSalida IS NOT NULL
 
     WHERE 
         SO.Cierre IS NOT NULL -- Solo órdenes cerradas
+		and SO.Apertura >= DATEADD(MONTH, -12, GETDATE()) -- 23ENE2026" para las fechas 
+
 )
 
 
@@ -841,15 +1007,18 @@ INSERT INTO dwd.KPI_PostVta (
 				DATEDIFF(DAY, FechaApertura, GETDATE()) AS Dias_Desde_Ult_Servicio
 				,Origen_Unidad
 				,'PromedioPermanenciaDiasClientesCaptados'
-			FROM MetricasVehiculo;
+			FROM MetricasVehiculo
 
 
-		select * from dwd.KPI_PostVta where indicadorKPI = 'PromedioPermanenciaDiasClientesCaptados'
+		--select * from dwd.KPI_PostVta where indicadorKPI = 'PromedioPermanenciaDiasClientesCaptados'
 		
-------------------------------------------------------------------------------------------------------------------------------------
-
-
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
 /* KPI57: Tasa de Captación y Retención (Motos Terceros) - VERSIÓN LIMPIA = KPI56query */
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
 
 ;wiTH MetricasVehiculo AS (
     SELECT 
@@ -977,10 +1146,32 @@ INSERT INTO dwd.KPI_PostVta (
 				,'TasaCaptacionRetencionTerceros'
 			FROM MetricasVehiculo;
 
+			/* query para el origen de datos 
+		select sucursalNombre,
+				NumeroOrden,
+				Marca,
+				Patente,				
+				Modelo,
+				ClienteNombre,
+						gruposCodigoDescripcion,
+				FechaPrimerService,
+				FechaUltimoService,
+				mesaño,
+				Cantidad_Total_Visitas,
+				Dias_Retencion_Cliente,
+				Dias_Desde_Ult_Servicio,
+				unidadtipo
 
-		select * from dwd.KPI_PostVta where indicadorKPI = 'TasaCaptacionRetencionTerceros'
+				from dwd.KPI_PostVta where indicadorKPI = 'TasaCaptacionRetencionTerceros'
 
---------------------------------------------------------
+
+				*/ 
+
+
+
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
 --KPI58
 
 
@@ -991,6 +1182,9 @@ INSERT INTO dwd.KPI_PostVta (
 --------------------------------------------------------
 -- KPI 58: Gestión de Turnos de PostVenta (CON LÓGICA DE FUTURO)
 --------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
 
 INSERT INTO dwd.KPI_PostVta (
     mesaño,
@@ -1019,24 +1213,37 @@ SELECT
             ELSE ST.ClienteApellido + ', ' + ST.ClienteNombre
         END
     )) AS ClienteNombre,
-    ST.Incidentes AS referencia,
-    -- Lógica polimórfica según estándar de arquitectura
+ 
+ ST.Incidentes AS referencia,
+ 
+ -- Lógica polimórfica según estándar de arquitectura
     CASE 
         WHEN ST.TablaAutomotor = 'ServiciosAutos' THEN SAMOD.DescripcionOperativa
         WHEN ST.TablaAutomotor = 'Unidades'       THEN UMOD.DescripcionOperativa
         WHEN ST.TablaAutomotor = 'Usados'         THEN USA.Marca + ' ' + USA.Modelo
         ELSE 'DESCONOCIDO'
     END AS Modelo,
+
+
     -- Lógica de KPIValue: Comparamos contra la fecha y hora actual
     CASE 
         WHEN ST.Fecha > GETDATE() THEN 1 
         ELSE 0 
     END AS KPIValue,
+
+
+
+
+
     -- Campo descriptivo para el usuario final
     CASE 
         WHEN ST.Fecha > GETDATE() THEN 'Turno Futuro' 
         ELSE 'Turno Pasado' 
     END AS cargoDescripcion,
+
+
+
+
     'TurnosPostVenta' AS indicadorKPI,
 	
 
@@ -1045,26 +1252,26 @@ SELECT
         ELSE 'Tomado' 
     END AS OrdenDeServicio
 
-FROM sta.ServiciosTurnos ST WITH (NOLOCK)
-LEFT JOIN sta.Recepcionistas REC WITH (NOLOCK) 
-    ON ST.RecepcionistaID = REC.RecepcionistaId
-LEFT JOIN sta.SucursalesDeventa SDV WITH (NOLOCK) 
-    ON REC.Sucursal = SDV.Numero
--- Cruce polimórfico condicional
-LEFT JOIN sta.ServiciosAutos SA WITH (NOLOCK) 
-    ON ST.Automotor = SA.ServiciosAutosId AND ST.TablaAutomotor = 'ServiciosAutos'
-LEFT JOIN sta.Modelos SAMOD WITH (NOLOCK) 
-    ON SA.Modelo = SAMOD.Modelo
-LEFT JOIN sta.Unidades U WITH (NOLOCK) 
-    ON ST.Automotor = U.UnidadID AND ST.TablaAutomotor = 'Unidades'
-LEFT JOIN sta.Modelos UMOD WITH (NOLOCK) 
-    ON U.Modelo = UMOD.Modelo
-LEFT JOIN sta.Usados USA WITH (NOLOCK) 
-    ON ST.Automotor = USA.UsadoID AND ST.TablaAutomotor = 'Usados'
-WHERE ST.Fecha IS NOT NULL;
+	FROM sta.ServiciosTurnos ST WITH (NOLOCK)
+	LEFT JOIN sta.Recepcionistas REC WITH (NOLOCK) 
+		ON ST.RecepcionistaID = REC.RecepcionistaId
+	LEFT JOIN sta.SucursalesDeventa SDV WITH (NOLOCK) 
+		ON REC.Sucursal = SDV.Numero
+	-- Cruce polimórfico condicional
+	LEFT JOIN sta.ServiciosAutos SA WITH (NOLOCK) 
+		ON ST.Automotor = SA.ServiciosAutosId AND ST.TablaAutomotor = 'ServiciosAutos'
+	LEFT JOIN sta.Modelos SAMOD WITH (NOLOCK) 
+		ON SA.Modelo = SAMOD.Modelo
+	LEFT JOIN sta.Unidades U WITH (NOLOCK) 
+		ON ST.Automotor = U.UnidadID AND ST.TablaAutomotor = 'Unidades'
+	LEFT JOIN sta.Modelos UMOD WITH (NOLOCK) 
+		ON U.Modelo = UMOD.Modelo
+	LEFT JOIN sta.Usados USA WITH (NOLOCK) 
+		ON ST.Automotor = USA.UsadoID AND ST.TablaAutomotor = 'Usados'
+	WHERE ST.Fecha IS NOT NULL;
 
 
-
+/*
 
 --query de validacion
 SELECT 
@@ -1084,6 +1291,7 @@ WHERE indicadorKPI = 'TurnosPostVenta'
 and sucursalNombre like '%QJ san Isidro%'
 --and mesaño = '2025-12'
  order by 1 desc
+ */
 
 	--------------------------------------------------------
 	EXECUTE @RC = [log].[sp_loguear_procesamiento] @procedimiento = 'sp_CalcularKPI_PostVta'
