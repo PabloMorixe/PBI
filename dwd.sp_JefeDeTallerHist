@@ -1,7 +1,6 @@
-
 USE [Tableros]
 GO
-/****** Object:  StoredProcedure [dwd].[sp_JefeDeTallerHist]    Script Date: 8/6/2026 19:34:27 ******/
+/****** Object:  StoredProcedure [dwd].[sp_JefeDeTallerHist]    Script Date: 8/6/2026 21:53:30 ******/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
@@ -1154,12 +1153,23 @@ SELECT C.FechaContable
 	INTO #Temp3
 	FROM BaseDatos3 BD
 	LEFT OUTER JOIN sta.SucursalesDeventa SDV ON BD.SucursalContable = SDV.Numero
-	WHERE BD.TipodeCargo = 'Garantia'
-		--AND BD.Cierre IS NOT NULL
-		--		and	bd.apertura >= DATEADD(MONTH, - 12, GETDATE()) -- 01FEB2026
-		AND BD.Cierre IS NULL
-		and 			bd.apertura >= DATEFROMPARTS(YEAR(DATEADD(MONTH, -12, GETDATE())), MONTH(DATEADD(MONTH, -12, GETDATE())), 1)
-		AND bd.apertura <= EOMONTH(GETDATE()) -- 1ro del mes hace 12 meses atrás hasta el último día del mes corriente
+	--WHERE BD.TipodeCargo = 'Garantia'
+	--	--AND BD.Cierre IS NOT NULL
+	--	-- and	bd.apertura >= DATEADD(MONTH, - 12, GETDATE()) -- 01FEB2026
+	--	AND BD.Cierre IS NOT NULL --lo cambiamos el 08 junio 2026 
+	--	and bd.apertura >= DATEFROMPARTS(YEAR(DATEADD(MONTH, -12, GETDATE())), MONTH(DATEADD(MONTH, -12, GETDATE())), 1)
+	--	AND bd.apertura <= EOMONTH(GETDATE()) -- 1ro del mes hace 12 meses atrás hasta el último día del mes corriente
+--el 08 de junio de 2026 reemplazamos el where 
+
+		WHERE BD.TipodeCargo = 'Garantia'
+				--AND BD.Cierre IS NOT NULL
+				--		and	bd.apertura >= DATEADD(MONTH, - 12, GETDATE()) -- 01FEB2026
+				AND BD.Cierre IS NOT NULL
+				and 			bd.Cierre >= DATEFROMPARTS(YEAR(DATEADD(MONTH, -12, GETDATE())), MONTH(DATEADD(MONTH, -12, GETDATE())), 1)
+				AND bd.Cierre <= EOMONTH(GETDATE()) -- 1ro del mes hace 12 meses atrás hasta el último día del mes corriente
+
+
+
 
 	GROUP BY BD.SucursalOrden
 		,BD.Apertura
