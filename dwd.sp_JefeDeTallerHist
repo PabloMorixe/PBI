@@ -153,6 +153,7 @@ BEGIN
 		,color
 		,IDFabrica
 		,vin
+		,Ubicacion
 		)
 	--0KM A ACTIVAR Q - CARGO ACTIVACIÓN Y ESTADO  
 	--05 ABRIL 2025
@@ -169,6 +170,7 @@ BEGIN
 		,COL.Descripcion AS Color
 		,U.IDFabrica
 		,U.VIN
+		,Ubicaciones.Descripcion
 	FROM sta.Preventas PV
 	LEFT OUTER JOIN sta.SucursalesDeventa SDV ON SDV.Numero = PV.Sucursal
 	LEFT OUTER JOIN sta.Clientes CLI ON CLI.Codigo = PV.Cliente
@@ -180,14 +182,12 @@ BEGIN
 	LEFT OUTER JOIN sta.Unidades U ON U.Preventa = PV.Numero
 	LEFT OUTER JOIN sta.Comprobantes C ON U.Factura = c.CONTROL
 	LEFT OUTER JOIN sta.TipoVenta TV ON PV.TipoDeVentaID = TV.TipoVentaID
+	left outer join sta.Ubicaciones on u.Ubicacion = ubicaciones.UbicacionID
 	WHERE 
 	--pv.Fecha >= DATEADD(MONTH, - 12, GETDATE()) -- 01FEB2026
 	--u.FacturaFecha >= DATEADD(MONTH, - 12, GETDATE()) -- 01FEB2026
 	u.FacturaFecha >= DATEFROMPARTS(YEAR(DATEADD(MONTH, -12, GETDATE())), MONTH(DATEADD(MONTH, -12, GETDATE())), 1)
-AND u.FacturaFecha <= EOMONTH(GETDATE()) -- 1ro del mes hace 12 meses atrás hasta el último día del mes corriente
-
-
-
+        AND u.FacturaFecha <= EOMONTH(GETDATE()) -- 1ro del mes hace 12 meses atrás hasta el último día del mes corriente
 		AND		PV.TipoPV = 'O'
 		AND PV.Anulada = 0
 		AND u.FacturaFecha IS NOT NULL
